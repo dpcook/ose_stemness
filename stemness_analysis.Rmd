@@ -1,0 +1,2198 @@
+---
+title: "Analysis for Lauren's paper"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(GeneOverlap)
+library(fgsea)
+```
+
+# Load all results
+```{r}
+spheroid_tpm <- read.csv("~/Projects/20180430_rna_seq/spheroid_project/output/spheroid_tpm_expression.csv",
+                         stringsAsFactors = F)
+brca_tpm <- read.csv("~/Projects/20180430_rna_seq/brca_project/output/brca_tpm_expression.csv",
+                     stringsAsFactors = F)
+snail_tpm <- read.csv("~/Projects/20180430_rna_seq/snail_project/output/snail_tpm_expression.csv",
+                      stringsAsFactors = F)
+
+dge_spheroid_fullmodel <- read.csv("~/Projects/20180430_rna_seq/spheroid_project/output/full_model_de_results.csv",
+                                   stringsAsFactors = F)
+
+full_model_clusters <- read.csv("~/Projects/20180430_rna_seq/spheroid_project/output/gene_clusters.csv",
+                                stringsAsFactors = F)
+
+dge_monolayer_tgfb1 <- read.csv("~/Projects/20180430_rna_seq/spheroid_project/output/de_monolayer_results.csv",
+                                stringsAsFactors = F)
+
+dge_spheroid_untreated <- read.csv("~/Projects/20180430_rna_seq/spheroid_project/output/de_untreated_spheres_results.csv",
+                                   stringsAsFactors = F)
+
+dge_snail <- read.csv("~/Projects/20180430_rna_seq/snail_project/output/snail_de_results.csv",
+                      stringsAsFactors = F)
+
+dge_brca <- read.csv("~/Projects/20180430_rna_seq/brca_project/output/de_brca_results.csv",
+                     stringsAsFactors = F)
+```
+
+NOTE: the cluster numbers in full_model_clusters are not as they appear top to bottom. I'll rename them to be more clear.
+Currently, from top to bottom in heatmap, the cluster order is:  7, 1, 6, 5, 2, 3, 4
+
+```{r}
+cluster_conversion <- data.frame(new = c(1,2,3,4,5,6,7),
+                                 old = c(7,1,6,5,2,3,4))
+full_model_clusters$Cluster <- cluster_conversion$new[match(full_model_clusters$Cluster, cluster_conversion$old)]
+
+table(full_model_clusters$Cluster)
+```
+
+
+# Pathway analysis
+Will run pathway analysis two separate ways. For the full model heatmap, because all genes are significant, but separated based on their patterns, I'll just run standard enrichment tests for each cluster. For all "upregulated" vs. "downregulated", I'll run GSEA on genes ranked by fold change. This will accomplish the same as the "Z-score" calculation I coded last time.
+
+```{r}
+hallmarks <- fgsea::gmtPathways("~/Data/GeneLists/hallmark.genesets.v6.1.symbols.gmt")
+kegg <- fgsea::gmtPathways("~/Data/GeneLists/kegg.genesets.v6.1.symbols.gmt")
+go <- fgsea::gmtPathways("~/Data/GeneLists/GOTerms.BP.v6.1.symbols.gmt")
+reactome <- fgsea::gmtPathways("~/Data/GeneLists/reactome.genesets.v6.1.symbols.gmt")
+
+gene_sets <- c(hallmarks, kegg, go, reactome)
+```
+
+
+## Heatmap
+```{r}
+enrichmentTest <- function(gene_set, gene_list){
+  go_object <- newGeneOverlap(gene_list, unlist(gene_set),
+                              spec = "mm9.gene")
+  go_object <- testGeneOverlap(go_object)
+  results <- go_object@pval
+}
+```
+
+```{r}
+cluster1_genes <- full_model_clusters %>% filter(Cluster==1) %>% pull(ext_gene)
+cluster2_genes <- full_model_clusters %>% filter(Cluster==2) %>% pull(ext_gene)
+cluster3_genes <- full_model_clusters %>% filter(Cluster==3) %>% pull(ext_gene)
+cluster4_genes <- full_model_clusters %>% filter(Cluster==4) %>% pull(ext_gene)
+cluster5_genes <- full_model_clusters %>% filter(Cluster==5) %>% pull(ext_gene)
+cluster6_genes <- full_model_clusters %>% filter(Cluster==6) %>% pull(ext_gene)
+cluster7_genes <- full_model_clusters %>% filter(Cluster==7) %>% pull(ext_gene)
+```
+
+```{r}
+cluster1_go <- lapply(gene_sets, enrichmentTest, toupper(cluster1_genes))
+cluster1_go <- as.data.frame(do.call("rbind", cluster1_go))
+colnames(cluster1_go) <- "pval"
+cluster1_go$padj <- p.adjust(cluster1_go$pval, method = "BH")
+
+cluster2_go <- lapply(gene_sets, enrichmentTest, toupper(cluster2_genes))
+cluster2_go <- as.data.frame(do.call("rbind", cluster2_go))
+colnames(cluster2_go) <- "pval"
+cluster2_go$padj <- p.adjust(cluster2_go$pval, method = "BH")
+
+cluster3_go <- lapply(gene_sets, enrichmentTest, toupper(cluster3_genes))
+cluster3_go <- as.data.frame(do.call("rbind", cluster3_go))
+colnames(cluster3_go) <- "pval"
+cluster3_go$padj <- p.adjust(cluster3_go$pval, method = "BH")
+
+cluster4_go <- lapply(gene_sets, enrichmentTest, toupper(cluster4_genes))
+cluster4_go <- as.data.frame(do.call("rbind", cluster4_go))
+colnames(cluster4_go) <- "pval"
+cluster4_go$padj <- p.adjust(cluster4_go$pval, method = "BH")
+
+cluster5_go <- lapply(gene_sets, enrichmentTest, toupper(cluster5_genes))
+cluster5_go <- as.data.frame(do.call("rbind", cluster5_go))
+colnames(cluster5_go) <- "pval"
+cluster5_go$padj <- p.adjust(cluster5_go$pval, method = "BH")
+
+cluster6_go <- lapply(gene_sets, enrichmentTest, toupper(cluster6_genes))
+cluster6_go <- as.data.frame(do.call("rbind", cluster6_go))
+colnames(cluster6_go) <- "pval"
+cluster6_go$padj <- p.adjust(cluster6_go$pval, method = "BH")
+
+cluster7_go <- lapply(gene_sets, enrichmentTest, toupper(cluster7_genes))
+cluster7_go <- as.data.frame(do.call("rbind", cluster7_go))
+colnames(cluster7_go) <- "pval"
+cluster7_go$padj <- p.adjust(cluster7_go$pval, method = "BH")
+```
+
+## GSEA
+### Monolayer Ctrl vs. TGFB1
+```{r}
+results <- dge_monolayer_tgfb1 %>% arrange(desc(b))
+ranked_fc <- results$b
+names(ranked_fc) <- toupper(results$ext_gene)
+
+gsea_monolayer_tgfb1 <- fgsea(pathways = gene_sets,
+              stats = ranked_fc,
+              minSize=10,
+              maxSize=5000,
+              nproc = 2)
+gsea_monolayer_tgfb1 <- as.data.frame(gsea_monolayer_tgfb1)
+gsea_monolayer_tgfb1$leadingEdge <- as.character(gsea_monolayer_tgfb1$leadingEdge)
+write.csv(gsea_monolayer_tgfb1, file = "../output/fgsea_monolayer_tgfb1_results.csv", quote=F)
+```
+
+### Monolayer vs. Spheroid untreated
+```{r}
+results <- dge_spheroid_untreated %>% arrange(desc(b))
+ranked_fc <- results$b
+names(ranked_fc) <- toupper(results$ext_gene)
+
+gsea_spheroid_untreated <- fgsea(pathways = gene_sets,
+              stats = ranked_fc,
+              minSize=10,
+              maxSize=5000,
+              nproc = 2)
+gsea_spheroid_untreated <- as.data.frame(gsea_spheroid_untreated)
+gsea_spheroid_untreated$leadingEdge <- as.character(gsea_spheroid_untreated$leadingEdge)
+write.csv(gsea_spheroid_untreated, file = "../output/fgsea_spheroid_untreated_results.csv", quote=F)
+```
+
+### Snail overexpression
+```{r}
+results <- dge_snail %>% arrange(desc(b))
+ranked_fc <- results$b
+names(ranked_fc) <- toupper(results$ext_gene)
+
+gsea_snail <- fgsea(pathways = gene_sets,
+              stats = ranked_fc,
+              minSize=10,
+              maxSize=5000,
+              nproc = 2)
+gsea_snail <- as.data.frame(gsea_snail)
+gsea_snail$leadingEdge <- as.character(gsea_snail$leadingEdge)
+write.csv(gsea_snail, file = "../output/fgsea_snail_results.csv", quote=F)
+```
+
+### BRCA1 deletion
+```{r}
+results <- dge_brca %>% arrange(desc(b))
+ranked_fc <- results$b
+names(ranked_fc) <- toupper(results$ext_gene)
+
+gsea_brca1 <- fgsea(pathways = gene_sets,
+              stats = ranked_fc,
+              minSize=10,
+              maxSize=5000,
+              nproc = 2,
+              nperm=100000)
+gsea_brca1 <- as.data.frame(gsea_brca1)
+gsea_brca1$leadingEdge <- as.character(gsea_brca1$leadingEdge)
+write.csv(gsea_brca1, file = "../output/fgsea_brca1_results.csv", quote=F)
+```
+
+## DoRothEA
+```{r}
+library(viper)
+library(dorothea)
+```
+
+```{r}
+data(dorothea_mm, package="dorothea")
+```
+
+```{r}
+regulons <- dorothea_mm %>%
+  filter(confidence %in% c("A", "B", "C", "D"))
+```
+
+### Monolayer Ctrl vs. TGFB1
+Prep data matrix
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,3:8])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+#Note: Does not calculate any statistics--just scores
+#May be most appropriate to not use "Scale", to run statistics, get an idea of effect size and then scale it myself
+tf_activities <- run_viper(exp_mat, regulons,
+                           tidy = T,
+                           options = list(method = "none",
+                                          minsize = 5,
+                                          cores = 2,
+                                          verbose = TRUE))
+tf_activities$Treatment <- ifelse(tf_activities$sample %in% c("Mono_Ctrl_1",
+                                                      "Mono_Ctrl_2",
+                                                      "Mono_Ctrl_3"),
+                                  yes = "Control", no = "TGFB1")
+```
+
+```{r}
+testRegulon <- function(regulon){
+  filtered_activity <- filter(tf_activities, tf==regulon)
+  model_result <- summary(lm(activity ~ Treatment, data=filtered_activity))
+  results <- data.frame(tf = regulon,
+                        Coefficient = model_result$coefficients[2,1],
+                        pval = model_result$coefficients[2,4])
+  return(results)
+}
+```
+
+```{r}
+regulon_test <- lapply(unique(tf_activities$tf), testRegulon)
+regulon_test <- do.call("rbind", regulon_test)
+regulon_test$padj <- p.adjust(regulon_test$pval, method = "BH")
+```
+
+```{r}
+sig_regulons <- filter(regulon_test, padj <= 0.05) %>%
+  pull(tf)
+
+tf_activities <- run_viper(exp_mat, filter(regulons, tf %in% sig_regulons),
+                           tidy = F,
+                           options = list(method = "scale",
+                                          minsize = 0,
+                                          cores = 2,
+                                          verbose = TRUE))
+```
+
+```{r}
+pheatmap(tf_activities,
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-2, 2, length.out=101),
+         clustering_method = "ward.D2",
+         border_color = "black",
+         filename="../figs/regulon_monolayer_tgfb1.png",
+         width=3.2, height=6)
+```
+
+### Monolayer Untreated vs. Spheroid Untreated
+Prep data matrix
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,c(3:5,9:11)])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+#Note: Does not calculate any statistics--just scores
+#May be most appropriate to not use "Scale", to run statistics, get an idea of effect size and then scale it myself
+tf_activities <- run_viper(exp_mat, regulons,
+                           tidy = T,
+                           options = list(method = "none",
+                                          minsize = 5,
+                                          cores = 2,
+                                          verbose = TRUE))
+tf_activities$Treatment <- ifelse(tf_activities$sample %in% c("Mono_Ctrl_1",
+                                                      "Mono_Ctrl_2",
+                                                      "Mono_Ctrl_3"),
+                                  yes = "Monolayer", no = "Spheroid")
+```
+
+```{r}
+regulon_test <- lapply(unique(tf_activities$tf), testRegulon)
+regulon_test <- do.call("rbind", regulon_test)
+regulon_test$padj <- p.adjust(regulon_test$pval, method = "BH")
+```
+
+```{r}
+sig_regulons <- filter(regulon_test, padj <= 0.05) %>%
+  pull(tf)
+
+tf_activities <- run_viper(exp_mat, filter(regulons, tf %in% sig_regulons),
+                           tidy = F,
+                           options = list(method = "scale",
+                                          minsize = 0,
+                                          cores = 2,
+                                          verbose = TRUE))
+```
+
+```{r}
+pheatmap(tf_activities,
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-2, 2, length.out=101),
+         cluster_cols = F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         filename="../figs/regulon_monolayer_spheroid.png",
+         width=3.2, height=25)
+```
+
+### Snail overexpression
+Prep data matrix
+```{r}
+exp_mat <- as.matrix(snail_tpm[,c(3:ncol(snail_tpm))])
+rownames(exp_mat) <- make.unique(snail_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+#Note: Does not calculate any statistics--just scores
+#May be most appropriate to not use "Scale", to run statistics, get an idea of effect size and then scale it myself
+tf_activities <- run_viper(exp_mat, regulons,
+                           tidy = T,
+                           options = list(method = "none",
+                                          minsize = 5,
+                                          cores = 2,
+                                          verbose = TRUE))
+tf_activities$Treatment <- ifelse(tf_activities$sample %in% c("Ctrl_1",
+                                                      "Ctrl_2",
+                                                      "Ctrl_3"),
+                                  yes = "Ctrl", no = "Snail")
+```
+
+```{r}
+regulon_test <- lapply(unique(tf_activities$tf), testRegulon)
+regulon_test <- do.call("rbind", regulon_test)
+regulon_test$padj <- p.adjust(regulon_test$pval, method = "BH")
+```
+
+No sig regulons
+
+### BRCA1 deletion
+Prep data matrix
+```{r}
+exp_mat <- as.matrix(brca_tpm[,3:ncol(brca_tpm)])
+rownames(exp_mat) <- make.unique(brca_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+#Note: Does not calculate any statistics--just scores
+#May be most appropriate to not use "Scale", to run statistics, get an idea of effect size and then scale it myself
+tf_activities <- run_viper(exp_mat, regulons,
+                           tidy = T,
+                           options = list(method = "none",
+                                          minsize = 5,
+                                          cores = 2,
+                                          verbose = TRUE))
+tf_activities$Treatment <- ifelse(tf_activities$sample %in% c("Ctrl_1",
+                                                      "Ctrl_2",
+                                                      "Ctrl_3"),
+                                  yes = "Ctrl", no = "BRCA1")
+```
+
+```{r}
+regulon_test <- lapply(unique(tf_activities$tf), testRegulon)
+regulon_test <- do.call("rbind", regulon_test)
+regulon_test$padj <- p.adjust(regulon_test$pval, method = "BH")
+```
+
+No significant regulons
+
+## PROGENy
+```{r}
+library(progeny)
+```
+
+### Monolayer Ctrl vs. TGFB1
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,3:8])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "TGFB1", "TGFB1", "TGFB1")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+testPathway <- function(pathway){
+  pathways_filtered <- filter(pathways_tidy, Pathway == pathway)
+  model_result <- summary(lm(Activity ~ Treatment, data=pathways_filtered))
+  results <- data.frame(pathway = pathway,
+                        Coefficient = model_result$coefficients[2,1],
+                        pval = model_result$coefficients[2,4])
+  return(results)
+}
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+Only TGFb pathway is sig
+
+```{r}
+pheatmap(t(pathways),
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-2, 2, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         filename="../figs/progeny_monolayer_tgfb1.png",
+         width=3.2, height=4.2)
+```
+
+### Monolayer vs. Spheroid untreated
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,c(3:5,9:11)])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "Spheroid", "Spheroid", "Spheroid")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+sig_pathways
+```
+
+```{r}
+pheatmap(t(pathways),
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         filename="../figs/progeny_monolayer_spheroid.png",
+         width=3.2, height=4.2)
+```
+
+### Snail overexpression
+```{r}
+exp_mat <- as.matrix(snail_tpm[,3:ncol(snail_tpm)])
+rownames(exp_mat) <- make.unique(snail_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "Snail", "Snail", "Snail")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+No sig pathways
+
+### BRCA1 deletion
+```{r}
+exp_mat <- as.matrix(brca_tpm[,3:ncol(brca_tpm)])
+rownames(exp_mat) <- make.unique(brca_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "Treated", "Treated", "Treated") #NOTE: ORDER MIGHT BE WRONG
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+Estrogen and PI3K significant
+
+```{r}
+pheatmap(t(pathways)[,c(4:6,1:3)],
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         filename="../figs/progeny_brca1_deletion.png",
+         width=3.2, height=4.2)
+```
+
+## cisTarget
+```{r}
+motifRankings <- importRankings("~/Data/GeneLists/cisTarget/mm9-tss-centered-10kb-10species.mc9nr.feather")
+```
+
+```{r}
+motifAnnotations <- importAnnotations("~/Data/GeneLists/cisTarget/motifs-v9-nr.mgi-m0.001-o0.0.tbl.txt")
+```
+
+```{r}
+getTF <- function(genes){
+  gene_list <- list(SigGenes=genes)
+  motif_enrichment <- cisTarget(gene_list, 
+         motifRankings,
+         motifAnnot=motifAnnotations,
+         nesThreshold=0)
+  motif_scores <- data.frame(motif = motif_enrichment$motif,
+                             NES = motif_enrichment$NES,
+                             TF_highConf = motif_enrichment$TF_highConf,
+                             TF_lowConf = motif_enrichment$TF_lowConf)
+  
+  return(motif_scores)
+}
+```
+
+### Monolayer Crtl vs. TGFB1
+```{r}
+sig_genes <- dge_monolayer_tgfb1 %>% 
+  filter(qval <= 0.05 & b >= 0.5) %>%
+  pull(ext_gene)
+```
+
+```{r}
+tgfb1_tf <- getTF(sig_genes)
+```
+
+### Monolayer vs Spheroid
+```{r}
+sig_genes <- c(cluster5_genes, cluster7_genes)
+```
+
+```{r}
+spheroid_tf <- getTF(sig_genes)
+```
+
+### Snail overexpression
+```{r}
+sig_genes <- dge_snail %>% 
+  filter(qval <= 0.05 & b >= 0.5) %>%
+  pull(ext_gene)
+```
+
+```{r}
+snail_tf <- getTF(sig_genes)
+```
+
+### BRCA1 knockout
+```{r}
+sig_genes <- dge_brca %>% 
+  filter(qval <= 0.05 & b >= 0.5) %>%
+  pull(ext_gene)
+```
+
+```{r}
+brca1_tf <- getTF(sig_genes)
+```
+
+# Comparing differentially expressed genes
+## UPregulated
+```{r}
+tgfb1_sig_up <- dge_monolayer_tgfb1 %>% filter(qval <= 0.05 & b > 0.5) %>%
+  pull(ext_gene)
+
+spheroid_sig_up <- dge_spheroid_untreated %>% filter(qval <= 0.05 & b > 0.5) %>%
+  pull(ext_gene)
+
+common_genes_up <- intersect(tgfb1_sig_up, spheroid_sig_up)
+```
+
+```{r}
+common_tf_up <- getTF(common_genes_up)
+```
+
+```{r}
+common_genes_up_go <- lapply(gene_sets, enrichmentTest, toupper(common_genes_up))
+common_genes_up_go <- do.call("rbind", common_genes_up_go)
+common_genes_up_go <- as.data.frame(common_genes_up_go)
+colnames(common_genes_up_go) <- "pval"
+common_genes_up_go$padj <- p.adjust(common_genes_up_go$pval, method = "BH")
+```
+
+Is the overlap of the two gene sets significant?
+```{r}
+overlap_up <- newGeneOverlap(tgfb1_sig_up, spheroid_sig_up, spec="mm9.gene")
+overlap_up <- testGeneOverlap(overlap_up)
+```
+
+## Downregulated
+```{r}
+tgfb1_sig_down <- dge_monolayer_tgfb1 %>% filter(qval <= 0.05 & b < -0.5) %>%
+  pull(ext_gene)
+
+spheroid_sig_down <- dge_spheroid_untreated %>% filter(qval <= 0.05 & b < -0.5) %>%
+  pull(ext_gene)
+
+common_genes_down <- intersect(tgfb1_sig_down, spheroid_sig_down)
+```
+
+```{r}
+common_tf_down <- getTF(common_genes_down)
+```
+
+```{r}
+common_genes_down_go <- lapply(gene_sets, enrichmentTest, toupper(common_genes_down))
+common_genes_down_go <- do.call("rbind", common_genes_down_go)
+common_genes_down_go <- as.data.frame(common_genes_down_go)
+colnames(common_genes_down_go) <- "pval"
+common_genes_down_go$padj <- p.adjust(common_genes_down_go$pval, method = "BH")
+```
+
+Is the overlap of the two gene sets significant?
+```{r}
+overlap_down <- newGeneOverlap(tgfb1_sig_down, spheroid_sig_down, spec="mm9.gene")
+overlap_down <- testGeneOverlap(overlap_down)
+```
+
+# Adding Snai1 genes into here
+```{r}
+snail_up <- dge_snail %>% filter(qval <= 0.05 & b > 0.5) %>% pull(ext_gene)
+snail_down <- dge_snail %>% filter(qval <= 0.05 & b < -0.5) %>% pull(ext_gene)
+```
+
+```{r}
+intersect(snail_up, common_genes_up)
+```
+
+```{r}
+intersect(snail_down, common_genes_down)
+```
+
+```{r}
+overlap_up <- newGeneOverlap(snail_up, common_genes_up, spec="mm9.gene")
+overlap_up <- testGeneOverlap(overlap_up)
+```
+
+# Adding BRCA1 genes into here
+```{r}
+brca1_ko_up <- dge_brca %>% filter(qval <= 0.05 & b > 0.5) %>% pull(ext_gene)
+brca1_ko_down <- dge_brca %>% filter(qval <= 0.05 & b < -0.5) %>% pull(ext_gene)
+```
+
+
+
+GO_CELL_CELL_ADHESION_VIA_PLASMA_MEMBRANE_ADHESION_MOLECULES is up
+
+```{r}
+brca1_common_up <- intersect(brca1_ko_up, spheroid_sig_up)
+length(brca1_common_up)
+```
+
+```{r}
+brca1_common_up_go <- lapply(gene_sets, enrichmentTest, toupper(brca1_common_up))
+brca1_common_up_go <- do.call("rbind", brca1_common_up_go)
+brca1_common_up_go <- as.data.frame(brca1_common_up_go)
+colnames(brca1_common_up_go) <- "pval"
+brca1_common_up_go$padj <- p.adjust(brca1_common_up_go$pval, method = "BH")
+```
+
+
+```{r}
+brca1_common_down <- intersect(brca1_ko_down, spheroid_sig_down)
+length(brca1_common_down)
+```
+```{r}
+brca1_common_down_go <- lapply(gene_sets, enrichmentTest, toupper(brca1_common_down))
+brca1_common_down_go <- do.call("rbind", brca1_common_down_go)
+brca1_common_down_go <- as.data.frame(brca1_common_down_go)
+colnames(brca1_common_down_go) <- "pval"
+brca1_common_down_go$padj <- p.adjust(brca1_common_down_go$pval, method = "BH")
+```
+
+# Plotting
+```{r}
+library(ggsci)
+```
+
+```{r}
+npg_cols <- pal_npg("nrc")(9)
+```
+
+
+## Fig 1
+### TGFB1 mOSE sphere counts
+Primary
+```{r}
+df_primary <- data.frame(Condition = c("Ctrl", "Ctrl", "Ctrl", "TGFB1", "TGFB1", "TGFB1"),
+                 Spheres = c(2.67, 2.67, 3.33, 5.67, 7.33, 6.33))
+```
+
+Secondary
+```{r}
+df_secondary <- data.frame(Condition = rep(c("Ctrl", "TGFB1"), each=6),
+                           Spheres = c(21, 10, 0, 3, 3, 7, 17, 19, 18, 11, 17, 14))
+```
+
+Primary plot
+```{r}
+primary_plot <- ggplot(df_primary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[1])) +
+  scale_y_continuous(limits=c(0, max(df_primary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+primary_plot
+```
+
+```{r}
+ggsave(primary_plot, filename = "../fig_panels/figure_1/spheres_tgfb1_primary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_primary))
+```
+
+Secondary plot
+```{r}
+secondary_plot <- ggplot(df_secondary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[1])) +
+  scale_y_continuous(limits=c(0, max(df_secondary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+secondary_plot
+```
+
+```{r}
+ggsave(secondary_plot, filename = "../fig_panels/figure_1/spheres_tgfb1_secondary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_secondary))
+```
+
+### hOSE primary spheres
+```{r}
+df_hose <- data.frame(Condition = rep(c("Ctrl", "TGFB1"), each = 4),
+                      Spheres = c(38, 5, 5, 32, 141, 66, 93, 40))
+```
+
+```{r}
+hose_plot <- ggplot(df_hose, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[1])) +
+  scale_y_continuous(limits=c(0, max(df_hose$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+hose_plot
+```
+
+```{r}
+ggsave(hose_plot, filename = "../fig_panels/figure_1/spheres_hose.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_hose))
+```
+
+### Stem cell array
+```{r}
+array <- data.frame(Gene = c("Ncam1", "Cd44", "Ascl2", "Jag1", "Col2a1", "Myc",
+                             "Bmp1", "T", "Tert", "Dhh", "Pparg", "Frat1", "Hspa9",
+                             "Gja1", "Dll1", "Fgf3", "Dtx2", "Gdf2", "Ccne1", "Abcg2",
+                             "Foxa2", "Ccna2", "Cxcl12", "Cdc2a", "Bmp3", "Krt15", "Bmp2"),
+                    FoldChange = c(13.92, 12.73, 6.08, 4.43, 4.33, 4.28, 3.89, 3.30,
+                                   2.47, 2.43, 2.39, -2.02, -2.10, -2.21, -2.36, -2.45,
+                                   -2.66, -2.75, -3.06, -3.23, -4.08, -6.49, -6.56,
+                                   -6.72, -7.96, -16.65, -38.35))
+array$Gene <- factor(array$Gene, levels = array$Gene)
+```
+
+```{r}
+array_plot <- ggplot(array, aes(x=FoldChange, y=Gene)) +
+  geom_col(color="black", fill="grey60", width = 0.85) +
+  geom_vline(xintercept = 0, linetype=2, size=1, color="black") +
+  scale_x_continuous(breaks=c(-40, -30, -20, -10, 0, 10, 20)) +
+  xlab("Fold Change") +
+  theme_classic() +
+  theme(axis.title.y=element_blank(),
+        axis.text = element_text(size=12, color="black"),
+        axis.title.x = element_text(size=14),
+        axis.line.y = element_blank(),
+        axis.ticks.y = element_blank())
+array_plot
+```
+Will export as vector and move gene names to the ends of the bars
+
+```{r}
+ggsave(array_plot, filename="../fig_panels/figure_1/stem_cell_array.pdf",
+       width=5.5, height=5.5)
+```
+
+
+### CD44 densitometry (mOSE + TGFB1)
+#### Full timecourse
+```{r}
+df_cd44_protein <- data.frame(TimePoint = rep(c(0, 6, 12, 24, 48, 96), each = 3),
+                      CD44 = c(0.39, 0.18, 0.37,
+                                  0.21, 0.178, 0.18, 
+                                  0.39, 0.17, 0.12,
+                                  0.29, 0.15, 0.20,
+                                  0.28, 0.47, 0.16,
+                                  0.52, 0.82, 0.50))
+df_cd44_protein$TimePoint <- factor(df_cd44_protein$TimePoint)
+ctrl_mean <- mean(df_cd44_protein$CD44[1:3])
+df_cd44_protein$CD44 <- df_cd44_protein$CD44 / ctrl_mean
+```
+
+```{r}
+cd44_dens_plot <- ggplot(df_cd44_protein, aes(x=TimePoint, y=CD44)) +
+  geom_boxplot(aes(fill=TimePoint), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", rep("grey60", 5))) + #can switch color if needed
+  #scale_y_continuous(limits=c(0, max(df_hose$Spheres))) +
+  ylab("Relative CD44 protein") + xlab("TGFB1 treatment (hours)") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(color="black", size=12),
+        axis.title.x = element_text(size=12),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+cd44_dens_plot
+```
+
+```{r}
+ggsave(cd44_dens_plot, filename = "../fig_panels/figure_1/cd44_densitometry.pdf",
+       useDingbats=F, width=3, height=3)
+```
+
+
+```{r}
+summary(lm(CD44 ~ TimePoint, data=df_cd44_protein))
+```
+
+### CD44 FACS sphere forming
+```{r}
+df_cd44 <- data.frame(Condition = rep(c("CD44-", "CD44+"), each=3),
+                      Spheres = c(15, 13, 24.3, 41, 38.6, 57))
+```
+
+```{r}
+paired_palette <- RColorBrewer::brewer.pal(12, "Paired")
+cd44_plot <- ggplot(df_cd44, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=paired_palette[9:10]) +
+  scale_y_continuous(limits=c(0, max(df_cd44$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+cd44_plot
+```
+
+```{r}
+ggsave(cd44_plot, filename = "../fig_panels/figure_1/spheres_cd44.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_cd44))
+```
+
+## Fig 2
+### Volcano untreated spheroids
+```{r}
+labeled_genes <- c("Cd44", "Aldh1a1", "Lgr5", "Zeb1",
+                   "Krt19", "Snai1", "Brca1",
+                   "Greb1", "Zeb2", "Pax8")
+```
+
+
+```{r}
+volcano <- dge_spheroid_untreated[,c("ext_gene", "qval", "b")]
+volcano$Sig <- ifelse(volcano$qval <= 0.05 & abs(volcano$b) >0.5 , "Sig", "NotSig")
+
+volcano$Labels <- ""
+label_rows <- which(volcano$ext_gene %in% labeled_genes)
+volcano$Labels[label_rows] <- volcano$ext_gene[label_rows]
+```
+
+```{r}
+volcano_plot <- ggplot(volcano, aes(x=b, y=-log10(qval))) +
+  geom_point(size=0.35, alpha=0.85, aes(color=Sig)) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype=2) +
+  geom_hline(yintercept = -log10(0.05), linetype=2) +
+  geom_text_repel(aes(label=Labels),
+                  direction = "both",
+                  size=5,
+                  segment.alpha=0.95,
+                  segment.color="black",
+                  min.segment.length = 0.1,
+                  force=0.075,
+                  nudge_y=5) +
+  scale_color_manual(values=c("grey60", npg_cols[2])) +
+  ylab("-log10(p-value)") + xlab("log2(Fold Change)") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14))
+volcano_plot
+```
+
+```{r}
+ggsave(volcano_plot, filename="../fig_panels/figure_2/spheroid_volcano.pdf",
+       useDingbats=F, width=5, height=3.75)
+```
+
+
+### GSEA results
+```{r}
+gsea <- gsea_spheroid_untreated %>% filter(padj < 0.05)
+```
+
+```{r}
+pathways <- c("GO_CELL_DIVISION", "GO_RECOMBINATIONAL_REPAIR",
+              "KEGG_OXIDATIVE_PHOSPHORYLATION", "GO_EPITHELIAL_CELL_CELL_ADHESION",
+              "GO_CHEMOKINE_MEDIATED_SIGNALING_PATHWAY", 
+              "HALLMARK_INFLAMMATORY_RESPONSE",
+              "GO_REGULATION_OF_CHEMOTAXIS")
+```
+
+```{r}
+gsea <- gsea %>% filter(pathway %in% pathways)
+
+gsea <- separate(gsea, pathway, c("geneset", "term"), extra="merge")
+gsea$term <- gsub("_", " ", gsea$term)
+gsea$term <- Hmisc::capitalize(tolower(gsea$term))
+gsea$pathway <- paste0(gsea$geneset, ": ", gsea$term)
+
+gsea <- arrange(gsea, NES)
+gsea$pathway <- factor(gsea$pathway, levels=gsea$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(gsea, aes(x=NES, y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", aes(fill=NES)) +
+  geom_vline(xintercept = 0, linetype=2) +
+  scale_fill_gradientn(colors=bluered) +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_2/spheroid_gsea.pdf",
+       useDingbats=F, width=6, height=2.25)
+```
+
+
+### Stemness markers
+```{r}
+stemness_markers <- c("Cd44", "Lgr5", "Ly6a", "Aldh1a1")
+```
+
+```{r}
+stemness_exp <- spheroid_tpm %>% filter(ext_gene %in% stemness_markers)
+
+# Calculate control means
+#ctrl_means <- rowMeans(stemness_exp[,3:5])
+
+stemness_exp <- stemness_exp[,c("ext_gene", 
+                                "Mono_Ctrl_1", "Mono_Ctrl_2", "Mono_Ctrl_3",
+                                "Sphere_Ctrl_1", "Sphere_Ctrl_2", "Sphere_Ctrl_3")]  
+stemness_exp <- tidyr::gather(stemness_exp, key="Sample", value="Expression", 
+                              -ext_gene)
+stemness_exp$Condition <- ifelse(stemness_exp$Sample %in% c("Mono_Ctrl_1",
+                                                            "Mono_Ctrl_2",
+                                                            "Mono_Ctrl_3"),
+                                 "Control", "Spheroid")
+stemness_exp$Expression <- log2(stemness_exp$Expression + 1)
+```
+
+```{r}
+exp_plot <- ggplot(stemness_exp, aes(x=Condition, y=Expression)) +
+  geom_boxplot(color="black", aes(fill=Condition)) +
+  geom_point(color="black", size=2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[2])) +
+  ylab("log(TPM+1)") + xlab("") +
+  facet_wrap(~ext_gene, scales="free", ncol = 4 ) +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text.y=element_text(size=12, color="black"),
+        axis.text.x=element_text(size=12, color="black", angle=45, hjust=1),
+        axis.title = element_text(size=14),
+        strip.background = element_blank(),
+        strip.text = element_text(size=14),
+        panel.grid=element_blank())
+exp_plot
+```
+
+```{r}
+ggsave(exp_plot, filename="../fig_panels/figure_2/spheroid_stemness_markers.pdf",
+       useDingbats=F, width=5.5, height=3.5)
+```
+
+### PROGENy: spheroids
+Dierctly copied from above:
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,c(3:5,9:11)])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "Spheroid", "Spheroid", "Spheroid")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+sig_pathways
+```
+
+```{r}
+pheatmap(t(pathways),
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         legend = F, #Will manually make legend--ranges from -1.5 to 1.5
+         border_color = "black",
+         filename="../fig_panels/figure_2/spheroid_progeny.pdf",
+         width=2.7, height=4.0)
+```
+
+## Fig 3
+### Volcano TGFB1
+```{r}
+labeled_genes <- c("Cd44", "Aldh1a1", "Lgr5", "Zeb1",
+                   "Krt19", "Snai1", "Brca1",
+                   "Greb1", "Zeb2")
+```
+
+
+```{r}
+volcano <- dge_monolayer_tgfb1[,c("ext_gene", "qval", "b")]
+volcano$Sig <- ifelse(volcano$qval <= 0.05 & abs(volcano$b) > 0.5, "Sig", "NotSig")
+
+volcano$Labels <- ""
+label_rows <- which(volcano$ext_gene %in% labeled_genes)
+volcano$Labels[label_rows] <- volcano$ext_gene[label_rows]
+```
+
+```{r}
+volcano_plot <- ggplot(volcano, aes(x=b, y=-log10(qval))) +
+  geom_point(size=0.35, alpha=0.85, aes(color=Sig)) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype=2) +
+  geom_hline(yintercept = -log10(0.05), linetype=2) +
+  geom_text_repel(aes(label=Labels),
+                  direction = "both",
+                  size=5,
+                  segment.alpha=0.95,
+                  segment.color="black",
+                  min.segment.length = 0.1,
+                  force=0.075,
+                  nudge_y=5) +
+  scale_color_manual(values=c("grey60", npg_cols[1])) +
+  ylab("-log10(p-value)") + xlab("log2(Fold Change)") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14))
+volcano_plot
+```
+
+```{r}
+ggsave(volcano_plot, filename="../fig_panels/figure_3/tgfb1_volcano.pdf",
+       useDingbats=F, width=5, height=3.75)
+```
+
+### GSEA results
+```{r}
+gsea <- gsea_monolayer_tgfb1 %>% filter(padj < 0.05)
+```
+
+```{r}
+pathways <- c("HALLMARK_OXIDATIVE_PHOSPHORYLATION",
+              "HALLMARK_INTERFERON_ALPHA_RESPONSE",
+              "GO_TUMOR_NECROSIS_FACTOR_MEDIATED_SIGNALING",
+              "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+              "GO_ERK1_AND_ERK2_CASCADE",
+              "GO_EXTRACELLULAR_STRUCTURE_ORGANIZATION",
+              "GO_MESENCHYMAL_CELL_DIFFERENTIATION")
+```
+
+```{r}
+gsea <- gsea %>% filter(pathway %in% pathways)
+
+gsea <- separate(gsea, pathway, c("geneset", "term"), extra="merge")
+gsea$term <- gsub("_", " ", gsea$term)
+gsea$term <- Hmisc::capitalize(tolower(gsea$term))
+gsea$pathway <- paste0(gsea$geneset, ": ", gsea$term)
+
+gsea <- arrange(gsea, NES)
+gsea$pathway <- factor(gsea$pathway, levels=gsea$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(gsea, aes(x=NES, y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", aes(fill=NES)) +
+  geom_vline(xintercept = 0, linetype=2) +
+  scale_fill_gradientn(colors=bluered) +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_3/tgfb1_gsea.pdf",
+       useDingbats=F, width=6, height=2.25)
+```
+
+### PROGENy
+```{r}
+exp_mat <- as.matrix(spheroid_tpm[,3:8])
+rownames(exp_mat) <- make.unique(spheroid_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "TGFB1", "TGFB1", "TGFB1")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+Only TGFb pathway is sig
+
+```{r}
+pheatmap(t(pathways),
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         legend=F,
+         filename="../fig_panels/figure_3/progeny_monolayer_tgfb1.pdf",
+         width=2.7, height=4.0)
+```
+
+### Common genes
+
+```{r}
+gene_list <- intersect(dge_monolayer_tgfb1$ext_gene, dge_spheroid_untreated$ext_gene)
+```
+
+```{r}
+fold_changes <- data.frame(gene = gene_list)
+fold_changes$tgfb1_fc <- dge_monolayer_tgfb1$b[match(gene_list, 
+                                                     dge_monolayer_tgfb1$ext_gene)]
+fold_changes$spheroid_fc <- dge_spheroid_untreated$b[match(gene_list,
+                                                           dge_spheroid_untreated$ext_gene)]
+fold_changes$sig <- ifelse(abs(fold_changes$tgfb1_fc)>0.5 &
+                             abs(fold_changes$spheroid_fc)>0.5,
+                           "Sig", "Not")
+```
+
+```{r}
+gene_plot <- ggplot(fold_changes, aes(x=spheroid_fc, y=tgfb1_fc)) +
+  geom_point(size=0.25, aes(color=sig)) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype=2) +
+  geom_hline(yintercept = c(-0.5, 0.5), linetype=2) +
+  scale_color_manual(values=c("grey60", npg_cols[3])) +
+  xlab("Spheroid logFC") + ylab("TGFB1 logFC") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14))
+gene_plot
+```
+
+```{r}
+ggsave(gene_plot, filename="../fig_panels/figure_3/tgfb1_spheroid_comparison.pdf",
+       useDingbats=F, width=4.75, height=2)
+```
+
+### Common GO terms
+
+```{r}
+tgfb1_sig_up <- dge_monolayer_tgfb1 %>% filter(qval <= 0.05 & b > 0.5) %>%
+  pull(ext_gene)
+
+spheroid_sig_up <- dge_spheroid_untreated %>% filter(qval <= 0.05 & b > 0.5) %>%
+  pull(ext_gene)
+
+common_genes_up <- intersect(tgfb1_sig_up, spheroid_sig_up)
+```
+
+```{r}
+tgfb1_sig_down <- dge_monolayer_tgfb1 %>% filter(qval <= 0.05 & b < -0.5) %>%
+  pull(ext_gene)
+
+spheroid_sig_down <- dge_spheroid_untreated %>% filter(qval <= 0.05 & b < -0.5) %>%
+  pull(ext_gene)
+
+common_genes_down <- intersect(tgfb1_sig_down, spheroid_sig_down)
+```
+
+```{r}
+up_go <- lapply(gene_sets, enrichmentTest, toupper(common_genes_up))
+up_go <- as.data.frame(do.call("rbind", up_go))
+colnames(up_go) <- "pval"
+up_go$padj <- p.adjust(up_go$pval, method = "BH")
+up_go$pathway <- rownames(up_go)
+
+down_go <- lapply(gene_sets, enrichmentTest, toupper(common_genes_down))
+down_go <- as.data.frame(do.call("rbind", down_go))
+colnames(down_go) <- "pval"
+down_go$padj <- p.adjust(down_go$pval, method = "BH")
+down_go$pathway <- rownames(down_go)
+```
+
+#### Up GO
+```{r}
+pathways <- c("HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION",
+              "HALLMARK_TNFA_SIGNALING_VIA_NFKB",
+              "GO_ANGIOGENESIS")
+```
+
+```{r}
+up_go_hits <- up_go %>% filter(pathway %in% pathways)
+
+up_go_hits <- separate(up_go_hits, pathway, c("geneset", "term"), extra="merge")
+up_go_hits$term <- gsub("_", " ", up_go_hits$term)
+up_go_hits$term <- Hmisc::capitalize(tolower(up_go_hits$term))
+up_go_hits$pathway <- paste0(up_go_hits$geneset, ": ", up_go_hits$term)
+
+up_go_hits <- arrange(up_go_hits, desc(padj))
+up_go_hits$pathway[2] <- "HALLMARK: Epithelial-mesenchymal transition"
+up_go_hits$pathway[3] <- "HALLMARK: TNFa signaling via NFkB"
+
+up_go_hits$pathway <- factor(up_go_hits$pathway, levels=up_go_hits$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(up_go_hits, aes(x=-log10(padj), y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", fill=bluered[9]) +
+  geom_vline(xintercept = -log10(0.05), linetype=2) +
+  xlab("-log10(p-value)") +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_3/common_up_genes.pdf",
+       useDingbats=F, width=6.25, height=1.25)
+```
+
+
+#### Down GO
+```{r}
+pathways <- c("HALLMARK_INTERFERON_GAMMA_RESPONSE",
+              "GO_CELL_SUBSTRATE_ADHESION",
+              "HALLMARK_INTERFERON_ALPHA_RESPONSE")
+```
+
+```{r}
+down_go_hits <- down_go %>% filter(pathway %in% pathways)
+
+down_go_hits <- separate(down_go_hits, pathway, c("geneset", "term"), extra="merge")
+down_go_hits$term <- gsub("_", " ", down_go_hits$term)
+down_go_hits$term <- Hmisc::capitalize(tolower(down_go_hits$term))
+down_go_hits$pathway <- paste0(down_go_hits$geneset, ": ", down_go_hits$term)
+
+down_go_hits <- arrange(down_go_hits, desc(padj))
+
+down_go_hits$pathway <- factor(down_go_hits$pathway, levels=down_go_hits$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(down_go_hits, aes(x=-log10(padj), y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", fill=bluered[1]) +
+  geom_vline(xintercept = -log10(0.05), linetype=2) +
+  xlab("-log10(p-value)") +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_3/common_down_genes.pdf",
+       useDingbats=F, width=5.85, height=1.25)
+```
+
+## Fig 4
+### Snail sphere forming
+Primary
+```{r}
+df_primary <- data.frame(Condition = c("Ctrl", "Ctrl", "Ctrl", "Snail", "Snail", "Snail"),
+                 Spheres = c(1.67, 2.33, 2.33, 6.00, 5.33, 12.33))
+```
+
+Secondary
+```{r}
+df_secondary <- data.frame(Condition = c("Ctrl", "Ctrl", "Ctrl", "Snail", "Snail", "Snail"),
+                           Spheres = c(20.5, 22, 11, 34.5, 32, 53))
+```
+
+Primary plot
+```{r}
+primary_plot <- ggplot(df_primary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[7])) +
+  scale_y_continuous(limits=c(0, max(df_primary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+primary_plot
+```
+
+```{r}
+ggsave(primary_plot, filename = "../fig_panels/figure_4/spheres_snail_primary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_primary))
+```
+
+Secondary plot
+```{r}
+secondary_plot <- ggplot(df_secondary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[7])) +
+  scale_y_continuous(limits=c(0, max(df_secondary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+secondary_plot
+```
+
+```{r}
+ggsave(secondary_plot, filename = "../fig_panels/figure_4/spheres_snail_secondary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_secondary))
+```
+
+### Volcano
+```{r}
+labeled_genes <- c("Cd44", "Aldh1a1", "Lgr5", "Zeb1",
+                   "Krt19", "Snai1", "Brca1",
+                   "Greb1", "Zeb2")
+```
+
+
+```{r}
+volcano <- dge_snail[,c("ext_gene", "qval", "b")]
+volcano$Sig <- ifelse(volcano$qval <= 0.05 & abs(volcano$b) > 0.5, "Sig", "NotSig")
+
+volcano$Labels <- ""
+label_rows <- which(volcano$ext_gene %in% labeled_genes)
+volcano$Labels[label_rows] <- volcano$ext_gene[label_rows]
+
+volcano$b[volcano$b < -3] <- -3
+volcano$qval[volcano$qval < 1e-25] <- 1e-25
+```
+
+```{r}
+volcano_plot <- ggplot(volcano, aes(x=b, y=-log10(qval))) +
+  geom_point(size=0.35, alpha=0.85, aes(color=Sig)) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype=2) +
+  geom_hline(yintercept = -log10(0.05), linetype=2) +
+  geom_text_repel(aes(label=Labels),
+                  direction = "both",
+                  size=5,
+                  segment.alpha=0.95,
+                  segment.color="black",
+                  min.segment.length = 0.1,
+                  nudge_y=5,
+                  force=5,
+                  max.iter=20000) +
+  scale_color_manual(values=c("grey60", npg_cols[7 ])) +
+  ylab("-log10(p-value)") + xlab("log2(Fold Change)") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14))
+volcano_plot
+```
+```{r}
+ggsave(volcano_plot, filename="../fig_panels/figure_4/snail_volcano.pdf",
+       useDingbats=F, width=5, height=3.75)
+```
+
+### PROGENy
+```{r}
+exp_mat <- as.matrix(snail_tpm[,3:ncol(snail_tpm)])
+rownames(exp_mat) <- make.unique(snail_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("Ctrl", "Ctrl", "Ctrl",
+                             "Snail", "Snail", "Snail")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+```{r}
+pheatmap(t(pathways),
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         legend=F,#Ranges from -1.5 to 1.5
+         filename="../fig_panels/figure_4/progeny_snail.pdf",
+         width=2.7, height=3.7)
+```
+
+### GSEA Results
+
+
+```{r}
+pathways <- c("HALLMARK_INTERFERON_ALPHA_RESPONSE",
+              "GO_STEROL_BIOSYNTHETIC_PROCESS",
+              "REACTOME_EXTRACELLULAR_MATRIX_ORGANIZATION",
+              "GO_ORGAN_MORPHOGENESIS",
+              "GO_BIOLOGICAL_ADHESION",
+              "GO_SPECIFICATION_OF_SYMMETRY")
+```
+
+```{r}
+gsea <- gsea_snail %>% filter(pathway %in% pathways)
+
+gsea <- separate(gsea, pathway, c("geneset", "term"), extra="merge")
+gsea$term <- gsub("_", " ", gsea$term)
+gsea$term <- Hmisc::capitalize(tolower(gsea$term))
+gsea$pathway <- paste0(gsea$geneset, ": ", gsea$term)
+
+gsea <- arrange(gsea, NES)
+gsea$pathway <- factor(gsea$pathway, levels=gsea$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(gsea, aes(x=NES, y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", aes(fill=NES)) +
+  geom_vline(xintercept = 0, linetype=2) +
+  scale_fill_gradientn(colors=bluered) +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_4/snail_gsea.pdf",
+       useDingbats=F, width=6, height=2.75)
+```
+
+### UpSet plot of gene sets
+```{r}
+snail_up <- dge_snail %>% filter(qval <= 0.05 & b > 0.5) %>% pull(ext_gene)
+snail_down <- dge_snail %>% filter(qval <= 0.05 & b < -0.5) %>% pull(ext_gene)
+```
+
+
+```{r}
+sig_genes<- data.frame(Gene = unique(c(tgfb1_sig_up, tgfb1_sig_down,
+                                       spheroid_sig_up, spheroid_sig_up,
+                                       snail_up, snail_down)))
+  
+sig_genes$TGFB1_Up <- sig_genes$Gene %in% tgfb1_sig_up
+sig_genes$TGFB1_Down <- sig_genes$Gene %in% tgfb1_sig_down
+sig_genes$Spheroid_Up <- sig_genes$Gene %in% spheroid_sig_up
+sig_genes$Spheroid_Down <- sig_genes$Gene %in% spheroid_sig_down
+sig_genes$Snail_Up <- sig_genes$Gene %in% snail_up
+sig_genes$Snail_Down <- sig_genes$Gene %in% snail_down
+
+#Convert TRUE/FALSE to 1/0
+sig_genes[,2:ncol(sig_genes)] <- lapply(sig_genes[,2:ncol(sig_genes)], as.numeric)
+```
+
+```{r}
+#Text scale order: c(intersection size title, intersection size tick labels, set size title, set size tick labels, set names, numbers above bars)
+pdf("../fig_panels/figure_4/snail_upset_plot.pdf", width=6.5, height=3, useDingbats=F)
+upset(sig_genes, nsets=12, nintersects=15, keep.order=T,
+      sets=rev(c("Spheroid_Up", "TGFB1_Up", "Snail_Up",
+             "Spheroid_Down", "TGFB1_Down", "Snail_Down")),
+      order.by = "freq", point.size=2.5,
+      mainbar.y.label = "Sig Gene\nIntersection Size",
+      sets.x.label = "Sig Gene Count",
+      text.scale=c(1.25, 1.25, 1.25,1.25, 1.5, 1.25),
+      mb.ratio = c(0.4, 0.6))
+dev.off()
+```
+
+## Fig 5
+### BRCA sphere forming
+
+Primary
+```{r}
+df_primary <- data.frame(Condition = rep(c("Ctrl", "Brca1 KO"), each=3),
+                 Spheres = c(2.00, 3.33, 0.00, 10, 20, 11.33))
+df_primary$Condition <- factor(df_primary$Condition, levels=c("Ctrl", "Brca1 KO"))
+```
+
+Secondary
+```{r}
+df_secondary <- data.frame(Condition = rep(c("Ctrl", "Brca1 KO"), each=5),
+                           Spheres = c(4, 19, 5, 25.5, 17.5, 70.5, 43, 58, 78.5, 47))
+df_secondary$Condition <- factor(df_secondary$Condition, levels=c("Ctrl", "Brca1 KO"))
+```
+
+Primary plot
+```{r}
+primary_plot <- ggplot(df_primary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), alpha=0.75, outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", "#3C5488FF")) +
+  scale_y_continuous(limits=c(0, max(df_primary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+primary_plot
+```
+
+```{r}
+ggsave(primary_plot, filename = "../fig_panels/figure_5/spheres_brca1_primary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_primary))
+```
+
+Secondary plot
+```{r}
+secondary_plot <- ggplot(df_secondary, aes(x=Condition, y=Spheres)) +
+  geom_boxplot(aes(fill=Condition), alpha=0.75, outlier.size=0) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[4])) +
+  scale_y_continuous(limits=c(0, max(df_secondary$Spheres))) +
+  ylab("Spheres per 4 fields") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+secondary_plot
+```
+
+```{r}
+ggsave(secondary_plot, filename = "../fig_panels/figure_5/spheres_brca1_secondary.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Spheres ~ Condition, data=df_secondary))
+```
+
+### BRCA1 label retention
+```{r}
+df <- data.frame(Retention = c(0.29, 0.69, 0.79, 0.78, 0, 0, 0, 0,
+                               5.01, 2.87, 4.41, 1.32, 8.69, 6.25, 13.11, 5.24),
+                 Injection = c(rep("PBS", 8), rep("Ad-Cre", 8)),
+                 YFP = c(rep("YFP-", 4), rep("YFP+", 4),
+                         rep("YFP-", 4), rep("YFP+", 4)))
+df$Injection <- factor(df$Injection, levels=c("PBS", "Ad-Cre"))
+```
+
+```{r}
+label_plot <- ggplot(df, aes(x=Injection, y=Retention, fill=YFP)) +
+  geom_boxplot(color="black", alpha=0.75, outlier.size = 0) +
+  geom_point(position = position_dodge(width=0.75),
+           color="black") +
+  scale_fill_manual(values=c("grey60", npg_cols[4]),
+                    name="") +
+  ylab("BrdU+ Cells (%)") + xlab("Intrabursal Injection") +
+  theme_classic() +
+  theme(axis.text=element_text(size=12, color="black"),
+        axis.title = element_text(size=14))
+label_plot
+```
+
+```{r}
+ggsave(label_plot, filename = "../fig_panels/figure_5/label_retention.pdf",
+       width=2.85, height=3.75, useDingbats=F)
+```
+
+
+## Fig 6
+### Volcano plot - BRCA1
+```{r}
+labeled_genes <- c("Cd44", "Aldh1a1", "Lgr5", "Zeb1",
+                   "Krt19", "Snai1", 
+                   "Greb1",  "Twist1")
+```
+
+
+```{r}
+volcano <- dge_brca[,c("ext_gene", "qval", "b")]
+volcano$Sig <- ifelse(volcano$qval <= 0.05 & abs(volcano$b) > 0.5, "Sig", "NotSig")
+
+volcano$Labels <- ""
+label_rows <- which(volcano$ext_gene %in% labeled_genes)
+volcano$Labels[label_rows] <- volcano$ext_gene[label_rows]
+```
+
+```{r}
+volcano_plot <- ggplot(volcano, aes(x=b, y=-log10(qval))) +
+  geom_point(size=0.35, alpha=0.75, aes(color=Sig)) +
+  geom_vline(xintercept = c(-0.5, 0.5), linetype=2) +
+  geom_hline(yintercept = -log10(0.05), linetype=2) +
+  geom_text_repel(aes(label=Labels),
+                  direction = "both",
+                  size=5,
+                  segment.alpha=0.95,
+                  segment.color="black",
+                  min.segment.length = 0.1,
+                  nudge_y=5,
+                  force=4,
+                  max.iter=20000) +
+  scale_color_manual(values=c("grey60", npg_cols[4])) +
+  ylab("-log10(p-value)") + xlab("log2(Fold Change)") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14))
+volcano_plot
+```
+
+```{r}
+ggsave(volcano_plot, filename="../fig_panels/figure_6/brca1_volcano.pdf",
+       useDingbats=F, width=5, height=3.75)
+```
+
+### GSEA - BRCA1
+```{r}
+gsea <- gsea_brca1 %>% filter(padj < 0.05)
+```
+
+```{r}
+pathways <- c("GO_ORGANIC_ACID_TRANSPORT",
+              "KEGG_ABC_TRANSPORTERS",
+              "GO_TRANSMEMBRANE_TRANSPORT",
+              "GO_OXIDATIVE_PHOSPHORYLATION",
+              "REACTOME_CELL_CYCLE",
+              "HALLMARK_DNA_REPAIR")
+```
+
+```{r}
+gsea <- gsea %>% filter(pathway %in% pathways)
+
+gsea <- separate(gsea, pathway, c("geneset", "term"), extra="merge")
+gsea$term <- gsub("_", " ", gsea$term)
+gsea$term <- Hmisc::capitalize(tolower(gsea$term))
+gsea$pathway <- paste0(gsea$geneset, ": ", gsea$term)
+
+gsea <- arrange(gsea, NES)
+gsea$pathway <- factor(gsea$pathway, levels=gsea$pathway)
+```
+
+```{r}
+bluered <- rev(RColorBrewer::brewer.pal(9, "RdBu"))
+gsea_plot <- ggplot(gsea, aes(x=NES, y=pathway)) +
+  geom_col(width = 0.05, color="black", fill="black") +
+  geom_point(pch=21, size=4, color="black", aes(fill=NES)) +
+  geom_vline(xintercept = 0, linetype=2) +
+  scale_fill_gradientn(colors=bluered) +
+  theme_bw() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title.x=element_text(size=14),
+        axis.title.y=element_blank(),
+        panel.grid=element_blank())
+gsea_plot
+```
+
+```{r}
+ggsave(gsea_plot, filename = "../fig_panels/figure_6/brca1_gsea.pdf",
+       useDingbats=F, width=6, height=2.25)
+```
+
+### PROGENy
+```{r}
+exp_mat <- as.matrix(brca_tpm[,3:8])
+rownames(exp_mat) <- make.unique(brca_tpm$ext_gene)
+exp_mat <- log2(exp_mat + 1)
+```
+
+```{r}
+pathways <- progeny(exp_mat, 
+                    scale=T,
+                    organism="Mouse")
+
+#make tidy version
+pathways_tidy <- as.data.frame(pathways)
+pathways_tidy$sample <- rownames(pathways)
+pathways_tidy$Treatment <- c("KO", "KO", "KO",
+                             "Ctrl", "Ctrl", "Ctrl")
+pathways_tidy <- gather(pathways_tidy, key = "Pathway", value = "Activity",
+                        -sample, -Treatment)
+```
+
+```{r}
+pathway_test <- lapply(colnames(pathways), testPathway)
+pathway_test <- do.call("rbind", pathway_test)
+pathway_test$padj <- p.adjust(pathway_test$pval, method = "BH")
+```
+
+```{r}
+sig_pathways <- filter(pathway_test, padj <= 0.05) %>%
+  pull(pathway)
+```
+
+Only estrogen and PI3K
+
+```{r}
+pheatmap(t(pathways)[,c(4:6, 1:3w)],
+         color = colorRampPalette(rev(brewer.pal(9, "RdBu")))(100),
+         breaks = seq(-1.5, 1.5, length.out=101),
+         cluster_cols=F,
+         clustering_method = "ward.D2",
+         border_color = "black",
+         legend=F,
+         filename="../fig_panels/figure_6/progeny_brca1.pdf",
+         width=2.7, height=4.0)
+```
+
+### UpSet Plot
+### UpSet plot of gene sets
+```{r}
+brca_up <- dge_brca %>% filter(qval <= 0.05 & b > 0.5) %>% pull(ext_gene)
+brca_down <- dge_brca %>% filter(qval <= 0.05 & b < -0.5) %>% pull(ext_gene)
+```
+
+
+```{r}
+sig_genes<- data.frame(Gene = unique(c(tgfb1_sig_up, tgfb1_sig_down,
+                                       spheroid_sig_up, spheroid_sig_up,
+                                       snail_up, snail_down,
+                                       brca_up, brca_down)))
+  
+sig_genes$TGFB1_Up <- sig_genes$Gene %in% tgfb1_sig_up
+sig_genes$TGFB1_Down <- sig_genes$Gene %in% tgfb1_sig_down
+sig_genes$Spheroid_Up <- sig_genes$Gene %in% spheroid_sig_up
+sig_genes$Spheroid_Down <- sig_genes$Gene %in% spheroid_sig_down
+sig_genes$Snail_Up <- sig_genes$Gene %in% snail_up
+sig_genes$Snail_Down <- sig_genes$Gene %in% snail_down
+sig_genes$Brca1_KO_Up <- sig_genes$Gene %in% brca_up
+sig_genes$Brca1_KO_Down <- sig_genes$Gene %in% brca_down
+
+#Convert TRUE/FALSE to 1/0
+sig_genes[,2:ncol(sig_genes)] <- lapply(sig_genes[,2:ncol(sig_genes)], as.numeric)
+```
+
+```{r}
+#Text scale order: c(intersection size title, intersection size tick labels, set size title, set size tick labels, set names, numbers above bars)
+pdf("../fig_panels/figure_6/brca1_upset_plot.pdf", width=6.5, height=3, useDingbats=F)
+upset(sig_genes, nsets=12, nintersects=15, keep.order=T,
+      sets=rev(c("Spheroid_Up", "TGFB1_Up", "Snail_Up", "Brca1_KO_Up",
+             "Spheroid_Down", "TGFB1_Down", "Snail_Down", "Brca1_KO_Down")),
+      order.by = "freq", point.size=2.5,
+      mainbar.y.label = "Sig Gene\nIntersection Size",
+      sets.x.label = "Sig Gene Count",
+      text.scale=c(1.25, 1.25, 1.25,1.25, 1.5, 1.25),
+      mb.ratio = c(0.4, 0.6))
+dev.off()
+```
+
+### Gene count plot
+Up genes
+```{r}
+up_counts <- as.matrix(sig_genes[,c(2,4,6,8)])
+rownames(up_counts) <- sig_genes$Gene
+up_counts <- rowSums(up_counts)
+up_counts <- up_counts[up_counts > 0]
+up_counts <- as.data.frame(up_counts[order(desc(up_counts))])
+colnames(up_counts) <- "Count"
+up_counts$Index <- 1:nrow(up_counts)
+up_counts$Count <- factor(up_counts$Count)
+
+down_counts <- as.matrix(sig_genes[,c(3,5,7,9)])
+rownames(down_counts) <- sig_genes$Gene
+down_counts <- rowSums(down_counts)
+down_counts <- down_counts[down_counts > 0]
+down_counts <- as.data.frame(down_counts[order(desc(down_counts))])
+colnames(down_counts) <- "Count"
+down_counts$Index <- 1:nrow(down_counts)
+down_counts$Count <- factor(down_counts$Count, levels=c(1, 2, 3, 4))
+```
+
+```{r}
+up_plot <- ggplot(up_counts, aes(x=Index, y=Count)) +
+  geom_point(size=1, color="black") +
+  xlab("Gene Count") + ylab("Differential Expression\nFrequency (# of conditions)") +
+  theme_classic() +
+  theme(axis.text=element_text(size=12, color="black"),
+        axis.title = element_text(size=12, color="black"))
+up_plot
+```
+
+```{r}
+ggsave(up_plot, filename="../fig_panels/figure_6/gene_count_up.pdf",
+       width=3.5, height=2.75, useDingbats=F)
+```
+
+Downregulated:
+```{r}
+down_plot <- ggplot(down_counts, aes(x=Index, y=Count)) +
+  geom_point(size=1, color="black") +
+  scale_y_discrete(drop=FALSE) +
+  xlab("Gene Count") + ylab("Differential Expression\nFrequency (# of conditions)") +
+  theme_classic() +
+  theme(axis.text=element_text(size=12, color="black"),
+        axis.title = element_text(size=12, color="black"))
+down_plot
+```
+
+```{r}
+ggsave(down_plot, filename="../fig_panels/figure_6/gene_count_down.pdf",
+       width=3.5, height=2.75, useDingbats=F)
+```
+
+## Supp Fig 1
+### TGFB1 Timecourse qPCR
+```{r}
+plotExpression <- function(data){
+  exp_plot <- ggplot(data, aes(x=TimePoint, y=Expression)) +
+    geom_boxplot(aes(fill=TimePoint), outlier.size=0) +
+    geom_point(size = 2.5) +
+    scale_fill_manual(values=c("grey60", rep("grey60", 5))) + #can switch color if needed
+  #scale_y_continuous(limits=c(0, max(df_hose$Spheres))) +
+    ylab("Relative expression") + xlab("TGFB1 treatment (hours)") +
+    theme_classic() +
+    theme(legend.position="none",
+        axis.text.x = element_text(color="black", size=12),
+        axis.title.x = element_text(size=12),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+  return(exp_plot)
+}
+```
+
+
+#### Aldh1
+```{r}
+df <- data.frame(TimePoint = rep(c(0, 6, 12, 24, 48, 96), each =3),
+                 Expression = c(0.93, 1.08, 1.03,
+                                0.83, 0.72, 0.65,
+                                0.59, 0.72, 0.66,
+                                0.73, 0.98, 0.52,
+                                0.44, 0.68, 0.56,
+                                0.46, 0.84, 0.63))
+df$TimePoint <- factor(df$TimePoint)
+ctrl_mean <- mean(df$Expression[1:3])
+df$Expression <- df$Expression / ctrl_mean
+```
+
+```{r}
+exp_plot <- plotExpression(df)
+exp_plot
+```
+
+```{r}
+summary(lm(Expression ~ TimePoint, data=df))
+```
+
+```{r}
+ggsave(exp_plot, filename = "../fig_panels/supplementary_fig_1/aldh1_tgfb1_timecourse.pdf",
+       useDingbats=F, width=4, height=2.8)
+```
+
+#### Lgr5
+```{r}
+df <- data.frame(TimePoint = rep(c(0, 6, 12, 24, 48, 96), each =3),
+                 Expression = c(0.79, 1.35, 1.16,
+                                0.30, 0.62, 0.70,
+                                0.50, 0.58, 0.58,
+                                0.29, 0.72, 0.34, 
+                                0.11, 0.25, 0.27,
+                                0.20, 0.33, 0.66))
+df$TimePoint <- factor(df$TimePoint)
+ctrl_mean <- mean(df$Expression[1:3])
+df$Expression <- df$Expression / ctrl_mean
+```
+
+```{r}
+exp_plot <- plotExpression(df)
+exp_plot
+```
+
+```{r}
+summary(lm(Expression ~ TimePoint, data=df))
+```
+
+```{r}
+ggsave(exp_plot, filename = "../fig_panels/supplementary_fig_1/lgr5_tgfb1_timecourse.pdf",
+       useDingbats=F, width=4, height=2.8)
+```
+
+#### Nanog
+```{r}
+df <- data.frame(TimePoint = rep(c(0, 6, 12, 24, 48, 96), each =3),
+                 Expression = c(1.32, 0.94, 1.39,
+                                2.10, 2.16, 1.25,
+                                2.22, 1.55, 1.70,
+                                1.63, 1.17, 1.41,
+                                1.61, 1.28, 1.11,
+                                1.62, 1.24, 1.84))
+df$TimePoint <- factor(df$TimePoint)
+ctrl_mean <- mean(df$Expression[1:3])
+df$Expression <- df$Expression / ctrl_mean
+```
+
+```{r}
+exp_plot <- plotExpression(df)
+exp_plot
+```
+
+```{r}
+summary(lm(Expression ~ TimePoint, data=df))
+```
+
+```{r}
+ggsave(exp_plot, filename = "../fig_panels/supplementary_fig_1/nanog_tgfb1_timecourse.pdf",
+       useDingbats=F, width=4, height=2.8)
+```
+
+## Supp Fig 2
+### CD44 qPCR validation
+```{r}
+df <- data.frame(TimePoint = rep(c(0, 6, 12, 24, 48, 96), each =3),
+                 Expression = c(0.90, 0.87, 0.97,
+                                1.19, 1.29, 1.02,
+                                1.32, 1.34, 0.99,
+                                0.59, 0.47, 0.51,
+                                3.44, 3.75, 2.63,
+                                2.94, 2.93, 1.52))
+df$TimePoint <- factor(df$TimePoint)
+ctrl_mean <- mean(df$Expression[1:3])
+df$Expression <- df$Expression / ctrl_mean
+```
+
+```{r}
+exp_plot <- plotExpression(df)
+exp_plot
+```
+
+```{r}
+summary(lm(Expression ~ TimePoint, data=df))
+```
+
+```{r}
+ggsave(exp_plot, filename = "../fig_panels/supplementary_fig_2/cd44_tgfb1_timecourse.pdf",
+       useDingbats=F, width=4, height=2.8)
+```
+
+## Supp Fig 3
+### BRCA1 KO western densitometry
+
+```{r}
+df <- data.frame(Condition = rep(c("Ctrl", "Brca1 KO"), each=3),
+                 Signal = c(0.36, 0.67, 0.53, 0.086, 0.063, 0.12))
+df$Condition <- factor(df$Condition, levels=c("Ctrl", "Brca1 KO"))
+```
+
+Primary plot
+```{r}
+brca_plot <- ggplot(df, aes(x=Condition, y=Signal)) +
+  geom_boxplot(aes(fill=Condition), outlier.size=0, alpha=0.75) +
+  geom_point(size = 2.5) +
+  scale_fill_manual(values=c("grey60", npg_cols[4])) +
+  scale_y_continuous(limits=c(0, max(df$Signal))) +
+  ylab("Relative BRCA1 protein") +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text.x = element_text(angle=45, hjust=1, color="black", size=12),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size=12, colour = "black"),
+        axis.title.y = element_text(size=12))
+
+brca_plot
+```
+
+```{r}
+ggsave(brca_plot, filename = "../fig_panels/supplementary_fig_3/brca1_KO_western.pdf",
+       useDingbats=F, width=1.4, height=3)
+```
+
+
+```{r}
+summary(lm(Signal ~ Condition, data=df))
+```
+

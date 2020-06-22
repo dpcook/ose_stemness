@@ -1,0 +1,246 @@
+---
+title: "RNA-Seq - Snail Project"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(sleuth)
+library(ggrepel)
+```
+
+#Differential Expression with Sleuth
+
+```{r}
+sample_id <- dir("~/Projects/20180430_rna_seq/snail_project/Kallisto")
+sample_id
+```
+
+```{r}
+kal_dirs <- file.path("~/Projects/20180430_rna_seq/snail_project/Kallisto", sample_id)
+kal_dirs
+```
+
+```{r}
+s2c <- data.frame(
+  sample = sample_id,
+  condition = c("GFP", "GFP", "GFP",
+                "Snail", "Snail", "Snail"),
+  path = kal_dirs,
+  stringsAsFactors=FALSE
+)
+s2c
+```
+
+###Getting transcript ID-gene ID table
+```{r}
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "mmusculus_gene_ensembl",
+  host = 'ensembl.org')
+t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
+    "external_gene_name"), mart = mart)
+t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
+  ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
+```
+
+```{r}
+so <- sleuth_prep(s2c, target_mapping = t2g,
+                  extra_bootstrap_summary=T, 
+                  aggregation_column="ens_gene",
+                  gene_mode=T)
+```
+
+```{r}
+so <- sleuth_fit(so, ~condition, 'full')
+so <- sleuth_fit(so, ~1, 'reduced')
+```
+
+```{r}
+so <- sleuth_wt(so, which_beta="conditionSnail", which_model="full")
+```
+
+```{r}
+plot_group_density(so, use_filtered = TRUE, units = "est_counts",
+  trans = "log", grouping = setdiff(colnames(so$sample_to_covariates),
+  "sample"), offset = 1)
+```
+
+```{r}
+sleuth_table <- sleuth_results(so, 'conditionSnail', 'wt', show_all = FALSE)
+```
+
+```{r}
+sleuth_significant <- dplyr::filter(sleuth_table, qval <= 0.05)
+```
+
+```{r}
+write.csv(sleuth_table, file="~/Projects/20180430_rna_seq/snail_project/output/de_results.csv")
+```
+
+```{r}
+genes <- unique(t2g[,2:3])
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+dat <- left_join(genes, dat, by=c("ens_gene"="target_id"))
+dat <- na.omit(dat)
+write.csv(dat, file="~/Projects/20180430_rna_seq/snail_project/output/snail_tpm_expression.csv", row.names=F)
+```
+
+# Enrichment analysis
+
+```{r}
+library(gProfileR)
+up_genes <- filter(sleuth_table, qval <= 0.05 & b >= 0.25)
+down_genes <- filter(sleuth_table, qval <= 0.05 & b <= (-0.25))
+```
+
+```{r}
+up_go_all <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=F, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+down_go_all <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=F, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+
+up_go <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="moderate")
+down_go <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="moderate")
+```
+
+```{r}
+up_go_all_sig <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+down_go_all_sig <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+
+write.csv(up_go_all_sig, file="~/Projects/20180430_rna_seq/snail_project/output/go_up_all_sig_terms.csv")
+write.csv(down_go_all_sig, file="~/Projects/20180430_rna_seq/snail_project/output/go_down_all_sig_terms.csv")
+```
+
+## Plotting
+I want to do a dot plot thing, where the size/colour of the dot is the z-score used by GOPlot (hits A).
+```{r}
+#Z-score = (Up hits) - (Down hits) / sqrt(term size)
+go_terms <- inner_join(up_go_all, down_go_all, by="term.id") #Note that we lose a couple IDs
+go_terms_z <- data.frame(term.id = go_terms$term.id,
+                         term.name = go_terms$term.name.x,
+                         domain = go_terms$domain.x,
+                         term.size = go_terms$term.size.x,
+                         up_overlap = go_terms$overlap.size.x,
+                         down_overlap = go_terms$overlap.size.y,
+                         pval_up = go_terms$p.value.x,
+                         pval_down = go_terms$p.value.y,
+                         z_score = (go_terms$overlap.size.x - go_terms$overlap.size.y) / sqrt(go_terms$term.size.x))
+#This is a master table
+```
+
+Now to get the hierarchically-filtered terms
+```{r}
+go_terms_sig <- filter(go_terms_z, term.id %in% up_go$term.id |
+                         term.id %in% down_go$term.id)
+#Prettying it up and ordering
+go_terms_sig$term.name <- Hmisc::capitalize(as.character(go_terms_sig$term.name))
+go_terms_sig$term.name <- factor(go_terms_sig$term.name, 
+                                 levels=go_terms_sig$term.name[order(go_terms_sig$z_score)])
+```
+
+Plot
+```{r}
+bluered <- rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+go_plot <- ggplot(go_terms_sig, aes(x=z_score, y=term.name)) +
+  geom_point(size=2, aes(color=z_score)) +
+  geom_vline(xintercept=0, linetype=2) +
+  scale_colour_gradientn(colours = bluered, name="Z-Score",
+                         limits=c(-1*(max(go_terms_sig$z_score)), max(go_terms_sig$z_score))) +
+  ylab("") + xlab("Term Z-Score") +
+  theme_classic() +
+  theme(legend.title=element_text(size=10),
+        legend.position="none") #Not sure if I want the color bar yet
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/snail_project/figs/snail_go_plot.pdf",
+       width=4.75, height=2.5)
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/snail_project/figs/snail_go_plot.png",
+       width=4.5, height=2.5)
+```
+
+# Volcano plot
+
+```{r}
+#Label list
+label_list <- c("Snai1", "Col6a2", "Col18a1", "Col6a1", "Col1a1", "Alcam", "Itga7", "Krt18", "Adamts4")
+```
+
+
+```{r}
+library(ggrepel)
+volcano_dat <- sleuth_table
+volcano_dat$sig <- "No"
+volcano_dat$sig[which(volcano_dat$qval <= 0.05 & abs(volcano_dat$b) > 0.25)] <- "Yes"
+
+volcano_dat$labels <- ""
+label_rows <- which(volcano_dat$ext_gene %in% label_list)
+volcano_dat$labels[label_rows] <-volcano_dat$ext_gene[label_rows]
+
+volcano <- ggplot(volcano_dat, aes(x=b, y=-log10(qval))) +
+  geom_point(size=2, alpha=0.5, aes(color=sig)) +
+  geom_vline(xintercept=c(-0.25, 0.25), linetype=2) +
+  geom_hline(yintercept=-log10(0.05), linetype=2) +
+  scale_x_continuous(limits=c(min(volcano_dat$b), (-1)*min(volcano_dat$b))) +
+  geom_text_repel(aes(label=labels),
+                    direction = "both",
+                    size=4,
+                    segment.alpha=0.75,
+                    segment.color="grey50",
+                  min.segment.length = 0.1,
+                  force=0.035,
+                  nudge_y=2) +
+  xlab("Fold Change (Beta)") + ylab("-log10(q value)") +
+  scale_color_manual(values=c("grey40", "cyan3")) +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14, color="black"))
+ggsave(volcano, file="~/Projects/20180430_rna_seq/snail_project/figs/snail_volcano_plot.pdf",
+       width=4, height=3.25)
+ggsave(volcano, file="~/Projects/20180430_rna_seq/snail_project/figs/snail_volcano_plot.png",
+       width=4, height=3.25)
+```
+
+# GO Term plots of TGFB1-specific GO terms
+I'm just pulling terms from a comparison Lauren did. She took the genes that TGFB induces but snail does not, and then did GO terms.
+
+```{r}
+bluered <- rev(colorRampPalette(RColorBrewer::brewer.pal(9, "RdBu"))(100))
+go_terms <- data.frame(terms = c("Positive regulation of cell migration",
+                                 "Cell adhesion",
+                                 "Wound healing",
+                                 "Multicellular organism development",
+                                 "Cell response to TGFB stimulus",
+                                 "Negative regulation of cell death",
+                                 "Immune system process",
+                                 "Oxidation-reduction process",
+                                 "Regulation of apoptotic process",
+                                 "Positive regulation of T cell activation",
+                                 "Negative regulation of JAK/STAT",
+                                 "Positive regulation of cell death"),
+                       p.val = c(9.9e-13, 5e-11, 9e-7, 2e-6, 1.4e-5, 4e-5,
+                                 1.1e-7, 5.3e-5, 8.3e-4, 8.6e-4, 8.6e-4, 1.6e-3),
+                       direction = c(rep("Up", 6), rep("Down", 6)))
+go_terms$terms <- factor(go_terms$terms, levels=rev(go_terms$terms))
+go_plot <- ggplot(go_terms, aes(x=terms, y=-log10(p.val))) +
+  geom_col(color="grey30", width=0.035) +
+  geom_point(size=2, aes(color=direction)) +
+  geom_hline(yintercept=-log10(0.05), linetype=2) +
+  scale_colour_manual(values=c(bluered[15], bluered[85])) +
+  scale_y_continuous(limits=c(0,12.5), expand=c(0,0)) +
+  xlab("") + ylab("-log10(p-value)") +
+  theme_classic() +
+  theme(legend.position="none",
+        plot.margin=unit(c(0.5,0.5,0.5,0.5), "cm")) +
+  coord_flip()
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/snail_project/figs/tgfb_snail_independent.pdf",
+       width=5, height=2.5, useDingbats=F)
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/snail_project/figs/tgfb_snail_independent.png",
+       width=5, height=2.5)
+```
+

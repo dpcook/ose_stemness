@@ -1,0 +1,722 @@
+---
+title: "RNA-Seq - Spheroid Project"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(pheatmap)
+library(sleuth)
+library(tidyr)
+library(ggplot2)
+library(viridis)
+library(RColorBrewer)
+```
+
+# Monolayer comparison
+## Differential Expression with Sleuth
+
+```{r}
+sample_id <- dir("~/Projects/20180430_rna_seq/spheroid_project/Kallisto")
+sample_id
+#Monolayer is only the first 6 samples
+sample_id <- sample_id[1:6]
+```
+
+```{r}
+kal_dirs <- file.path("~/Projects/20180430_rna_seq/spheroid_project/Kallisto", sample_id)
+kal_dirs
+```
+
+```{r}
+s2c <- data.frame(
+  sample = sample_id,
+  treatment = c(rep("Ctrl", 3), rep("TGFB", 3)),
+  path = kal_dirs,
+  stringsAsFactors=FALSE
+)
+s2c
+```
+
+###Getting transcript ID-gene ID table
+```{r}
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "mmusculus_gene_ensembl",
+  host = 'useast.ensembl.org')
+t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
+    "external_gene_name"), mart = mart)
+t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
+  ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
+```
+
+```{r}
+so <- sleuth_prep(s2c, target_mapping = t2g,
+                  extra_bootstrap_summary=T, 
+                  aggregation_column="ens_gene",
+                  gene_mode=T)
+```
+
+```{r}
+so <- sleuth_fit(so, ~treatment, 'full')
+so <- sleuth_fit(so, ~1, 'reduced')
+```
+
+```{r}
+so <- sleuth_wt(so,which_beta="treatmentTGFB", which_model="full")
+```
+
+```{r}
+sleuth_table <- sleuth_results(so, 'treatmentTGFB', 'wt', show_all = FALSE)
+```
+
+```{r}
+sleuth_significant <- dplyr::filter(sleuth_table, qval <= 0.05 & abs(b) >= 0.5)
+```
+
+
+```{r}
+#Get expression table for export
+genes <- unique(t2g[,2:3])
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+dat <- left_join(genes, dat, by=c("ens_gene"="target_id"))
+dat <- na.omit(dat)
+write.csv(dat, file="~/Projects/20180430_rna_seq/spheroid_project/output/monolayer_tpm_expression.csv", row.names=F)
+```
+
+
+```{r}
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+rownames(dat) <- dat$target_id
+dat$target_id <- NULL
+dat <- as.matrix(dat)
+dat <- t(scale(t(dat), scale=T, center=T))
+
+dat_sig <- dat[sleuth_significant$target_id,]
+dat_sig[dat_sig>2.2] <- 2.2
+dat_sig[dat_sig<(-2.2)] <- -2.2
+```
+
+```{r}
+bluered <- rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+dat_heatmap <- pheatmap(dat_sig,
+                        colors=bluered,
+                        cluster_rows=T, cluster_cols=T,
+                        show_colnames=T,
+                        show_rownames=F,
+                        clustering_method="ward.D2")
+```
+
+```{r}
+write.csv(sleuth_table, file="~/Projects/20180430_rna_seq/spheroid_project/output/de_monolayer_results.csv")
+```
+
+## Enrichment Analysis
+
+```{r}
+library(gProfileR)
+up_genes <- filter(sleuth_table, qval <= 0.05 & b >= 0.5)
+down_genes <- filter(sleuth_table, qval <= 0.05 & b <= (-0.5))
+```
+
+```{r}
+up_go_all <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=F, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+down_go_all <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=F, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+
+up_go <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="moderate")
+down_go <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="moderate")
+```
+
+Get tables for all significant terms without any hierarchical filtering
+```{r}
+up_go_all_sig <- gprofiler(query=as.character(up_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+down_go_all_sig <- gprofiler(query=as.character(down_genes$target_id), organism="mmusculus",
+                   significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+
+write.csv(up_go_all_sig, file="~/Projects/20180430_rna_seq/spheroid_project/output/monolayer_tgfb_up_all_sig_terms.csv")
+write.csv(down_go_all_sig, file="~/Projects/20180430_rna_seq/spheroid_project/output/monolayer_tgfb_down_all_sig_terms.csv")
+```
+
+
+I want to do a dot plot thing, where the size/colour of the dot is the z-score used by GOPlot (hits A).
+```{r}
+#Z-score = (Up hits) - (Down hits) / sqrt(term size)
+go_terms <- inner_join(up_go_all, down_go_all, by="term.id") #Note that we lose a couple IDs
+go_terms_z <- data.frame(term.id = go_terms$term.id,
+                         term.name = go_terms$term.name.x,
+                         domain = go_terms$domain.x,
+                         term.size = go_terms$term.size.x,
+                         up_overlap = go_terms$overlap.size.x,
+                         down_overlap = go_terms$overlap.size.y,
+                         pval_up = go_terms$p.value.x,
+                         pval_down = go_terms$p.value.y,
+                         z_score = (go_terms$overlap.size.x - go_terms$overlap.size.y) / sqrt(go_terms$term.size.x))
+#This is a master table
+```
+
+Now to get the hierarchically-filtered terms
+```{r}
+go_terms_sig <- filter(go_terms_z, term.id %in% up_go$term.id |
+                         term.id %in% down_go$term.id)
+#There are a ton of differences. For this visualization, I'll restrict it to GO terms and remove KEGG pathways
+go_terms_sig <- filter(go_terms_sig, domain=="BP")
+#Prettying it up and ordering
+go_terms_sig$term.name <- Hmisc::capitalize(as.character(go_terms_sig$term.name))
+go_terms_sig$term.name <- factor(go_terms_sig$term.name, 
+                                 levels=go_terms_sig$term.name[order(go_terms_sig$z_score)])
+```
+
+Plot
+```{r}
+bluered <- rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+go_plot <- ggplot(go_terms_sig, aes(x=z_score, y=term.name)) +
+  geom_point(size=2, aes(color=z_score)) +
+  geom_vline(xintercept=0, linetype=2) +
+  scale_colour_gradientn(colours = bluered, name="Z-Score",
+                         limits=c(-1*(max(go_terms_sig$z_score)), max(go_terms_sig$z_score))) +
+  ylab("") + xlab("Term Z-Score") +
+  theme_classic() +
+  theme(legend.title=element_text(size=10),
+        legend.position="none") #Not sure if I want the color bar yet
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/monolayer_go_plot.pdf",
+       width=4.75, height=7.25)
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/monolayer_go_plot.png",
+       width=4.5, height=7)
+```
+
+## Volcano Plot
+```{r}
+#Label list
+label_list <- c("Snai1", "Ptgs2", "Krt19", "Col11a1", "Col1a1", "Mmp2", "Adamts16",
+                "Itga2", "Adamts8", "Col4a4", "Col6a2")
+```
+Adamts16
+Col11a1
+Adamts8
+Col1a1
+Adamts4
+Adam19
+Col4a4
+Col4a3
+Mmp2
+Mmp9
+Snai1
+Ptgs2
+Col5a1
+Col23a1
+Adamts10
+Itga2
+Itgb3
+Col6a2
+Col6a1
+Krt19
+Itgb8
+
+```{r}
+library(ggrepel)
+volcano_dat <- sleuth_table
+volcano_dat$sig <- "No"
+volcano_dat$sig[which(volcano_dat$qval <= 0.05 & abs(volcano_dat$b) > 1)] <- "Yes"
+
+volcano_dat$labels <- ""
+label_rows <- which(volcano_dat$ext_gene %in% label_list)
+volcano_dat$labels[label_rows] <-volcano_dat$ext_gene[label_rows]
+
+volcano <- ggplot(volcano_dat, aes(x=b, y=-log10(qval))) +
+  geom_point(size=2, alpha=0.5, aes(color=sig)) +
+  geom_vline(xintercept=c(-1, 1), linetype=2) +
+  geom_hline(yintercept=-log10(0.05), linetype=2) +
+  geom_text_repel(aes(label=labels),
+                    direction = "both",
+                    size=4,
+                    segment.alpha=0.75,
+                    segment.color="grey50",
+                  min.segment.length = 0.1,
+                  force=25,
+                  max.iter=5000) +
+  xlab("Fold Change (Beta)") + ylab("-log10(q value)") +
+  scale_color_manual(values=c("grey40", "cyan3")) +
+  theme_classic() +
+  theme(legend.position="none",
+        axis.text=element_text(size=12, color="black"),
+        axis.title=element_text(size=14, color="black"))
+ggsave(volcano, file="~/Projects/20180430_rna_seq/spheroid_project/figs/monolayer_volcano_plot.pdf",
+       width=4, height=3.25)
+ggsave(volcano, file="~/Projects/20180430_rna_seq/spheroid_project/figs/monolayer_volcano_plot.png",
+       width=4, height=3.25)
+```
+
+# Spheroids - Untreated
+
+```{r}
+sample_id <- dir("~/Projects/20180430_rna_seq/spheroid_project/Kallisto")
+sample_id <- sample_id[c(1:3, 7:9)]
+```
+
+```{r}
+kal_dirs <- file.path("~/Projects/20180430_rna_seq/spheroid_project/Kallisto", sample_id)
+kal_dirs
+```
+
+```{r}
+s2c <- data.frame(
+  sample = sample_id,
+  culture = c(rep(c("Monolayer", "Spheroid"), each=3)),
+  path = kal_dirs,
+  stringsAsFactors=FALSE
+)
+s2c
+```
+
+```{r}
+so <- sleuth_prep(s2c, target_mapping = t2g,
+                  extra_bootstrap_summary=T, 
+                  aggregation_column="ens_gene",
+                  gene_mode=T)
+```
+
+
+```{r}
+so <- sleuth_fit(so, ~culture, 'full')
+so <- sleuth_fit(so, ~1, 'reduced')
+```
+
+```{r}
+so <- sleuth_wt(so,which_beta="cultureSpheroid", which_model="full")
+```
+
+```{r}
+sleuth_table_spheroid <- sleuth_results(so, 'cultureSpheroid', 'wt', show_all = FALSE)
+```
+
+```{r}
+genes <- unique(t2g[,2:3])
+sleuth_table_spheroid <- left_join(genes, sleuth_table_spheroid, by=c("ens_gene"="target_id"))
+sleuth_table_spheroid <- unique(na.omit(sleuth_table_spheroid))
+sleuth_significant_spheroid <- dplyr::filter(sleuth_table_spheroid, qval <= 0.05 & abs(b) >=1)
+```
+
+```{r}
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+rownames(dat) <- dat$target_id
+dat$target_id <- NULL
+dat <- as.matrix(dat)
+dat <- t(scale(t(dat), scale=T, center=T))
+
+dat_sig <- dat[sleuth_significant_spheroid$ens_gene,]
+dat_sig[dat_sig>2.2] <- 2.2
+dat_sig[dat_sig<(-2.2)] <- -2.2
+```
+
+```{r}
+bluered <- rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+dat_heatmap <- pheatmap(dat_sig,
+                        colors=bluered,
+                        cluster_rows=T, cluster_cols=T,
+                        show_colnames=T,
+                        show_rownames=F,
+                        clustering_method="ward.D2")
+```
+
+```{r}
+write.csv(sleuth_table_spheroid, file="~/Projects/20180430_rna_seq/spheroid_project/output/de_untreated_spheres_results.csv")
+```
+
+## Plot expression of gene
+```{r}
+genes <- unique(t2g[,2:3])
+tpm.mat <- so$obs_norm
+tpm.mat$scaled_reads_per_base <- NULL
+tpm.mat <- spread(tpm.mat, sample, tpm)
+tpm.mat <- left_join(genes, tpm.mat, by=c("ens_gene"="target_id"))
+tpm.mat <- na.omit(tpm.mat)
+```
+
+```{r}
+exp_dat <- tpm.mat
+exp_tidy <- gather(exp_dat, "Sample", "Expression", -ens_gene, -ext_gene)
+exp_tidy <- separate(exp_tidy, Sample, into=c("Culture", "Treatment", "Replicate"))
+```
+
+
+```{r}
+plotExpression <- function(gene){
+  df <- filter(exp_tidy, ext_gene == gene)
+  gene_plot <- ggplot(df, aes(x=Culture, y=log2(Expression+1))) +
+    geom_point(size=1, aes(color=Culture)) +
+    stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean,
+                 geom='crossbar', width=0.5, fatten=1.5) +
+    scale_x_discrete(labels=c("Monolayer", "Spheroid")) +
+    scale_color_manual(values=c("grey40", "firebrick", "firebrick")) +
+    xlab("") + ylab("log2(TPM + 1)") +
+    theme_bw() +
+    theme(axis.text.x=element_text(angle=45, hjust=1, size=10),
+          axis.title = element_text(size=10),
+          legend.position="none")
+  gene_plot
+  ggsave(gene_plot, filename = paste0("~/Projects/20180430_rna_seq/spheroid_project/figs/Expression_",
+                                      unique(df$ext_gene),
+                                      ".png"),
+         width=1.2, height=2)
+}
+```
+
+```{r}
+plotExpression("Lats1")
+plotExpression("Lats2")
+```
+
+#Spheroids - TGFB-treated
+```{r}
+sample_id <- dir("~/Projects/20180430_rna_seq/spheroid_project/Kallisto")
+sample_id <- sample_id[c(4:6, 10:12)]
+```
+
+```{r}
+kal_dirs <- file.path("~/Projects/20180430_rna_seq/spheroid_project/Kallisto", sample_id)
+kal_dirs
+```
+
+```{r}
+s2c <- data.frame(
+  sample = sample_id,
+  culture = c(rep(c("Monolayer", "Spheroid"), each=3)),
+  path = kal_dirs,
+  stringsAsFactors=FALSE
+)
+s2c
+```
+
+```{r}
+so <- sleuth_prep(s2c, target_mapping = t2g,
+                  extra_bootstrap_summary=T, 
+                  aggregation_column="ens_gene")
+```
+
+```{r}
+plot_pca(so, color_by = 'culture')
+```
+
+```{r}
+so <- sleuth_fit(so, ~culture, 'full')
+so <- sleuth_fit(so, ~1, 'reduced')
+```
+
+```{r}
+so <- sleuth_wt(so,which_beta="cultureSpheroid", which_model="full")
+```
+
+```{r}
+sleuth_table_tgfb_spheroid <- sleuth_results(so, 'cultureSpheroid', 'wt', show_all = FALSE)
+```
+
+```{r}
+genes <- unique(t2g[,2:3])
+sleuth_table_tgfb_spheroid <- left_join(genes, sleuth_table_tgfb_spheroid, by=c("ens_gene"="target_id"))
+sleuth_table_tgfb_spheroid <- unique(na.omit(sleuth_table_tgfb_spheroid))
+sleuth_significant_tgfb_spheroid <- dplyr::filter(sleuth_table_tgfb_spheroid, qval <= 0.05 & abs(b) >=1)
+```
+
+```{r}
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+rownames(dat) <- dat$target_id
+dat$target_id <- NULL
+dat <- as.matrix(dat)
+dat <- t(scale(t(dat), scale=T, center=T))
+
+dat_sig <- dat[sleuth_significant_tgfb_spheroid$ens_gene,]
+dat_sig[dat_sig>2.2] <- 2.2
+dat_sig[dat_sig<(-2.2)] <- -2.2
+```
+
+```{r}
+bluered <- rev(colorRampPalette(brewer.pal(9, "RdBu"))(100))
+dat_heatmap <- pheatmap(dat_sig,
+                        colors=bluered,
+                        cluster_rows=T, cluster_cols=T,
+                        show_colnames=T,
+                        show_rownames=F,
+                        clustering_method="ward.D2")
+```
+
+```{r}
+write.csv(sleuth_table_tgfb_spheroid, file="~/Projects/20180430_rna_seq/spheroid_project/output/de_tgfb_spheres_results.csv")
+```
+
+# Spheroid comparison
+```{r}
+temp <- left_join(sleuth_table_spheroid, sleuth_table_tgfb_spheroid, by="ens_gene")
+temp <- na.omit(temp)
+spheroid_data <- data.frame(ens_gene = temp$ens_gene,
+                            symbol = temp$ext_gene.x,
+                            qval_ctrl = temp$qval.x,
+                            qval_tgfb = temp$qval.y,
+                            b_ctrl = temp$b.x,
+                            b_tgfb = temp$b.y)
+rm(temp)
+```
+
+```{r}
+beta_plot <- ggplot(spheroid_data, aes(x=b_ctrl, y=b_tgfb)) +
+  geom_point(size=1, alpha=0.25, colour="black") +
+  xlab("Ctrl Beta") + ylab("TGFB Beta") +
+  theme_classic() +
+  theme(axis.text=element_text(size=12, colour="black"),
+        axis.title=element_text(size=14, colour="black"))
+beta_plot
+ggsave(beta_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/spheroid_beta_comparison.png",
+       width=4, height=3.5)
+```
+
+# ALL DATA: Full Model
+```{r}
+sample_id <- dir("~/Projects/20180430_rna_seq/spheroid_project/Kallisto")
+sample_id
+```
+
+```{r}
+kal_dirs <- file.path("~/Projects/20180430_rna_seq/spheroid_project/Kallisto", sample_id)
+kal_dirs
+```
+
+```{r}
+s2c <- data.frame(
+  sample = sample_id,
+  culture = c(rep(c("Monolayer", "Spheroid"), each=6)),
+  treatment = c(rep(c(rep("Ctrl", 3), rep("TGFB", 3)), 2)),
+  path = kal_dirs,
+  stringsAsFactors=FALSE
+)
+s2c
+```
+
+```{r}
+so <- sleuth_prep(s2c, target_mapping = t2g,
+                  extra_bootstrap_summary=T, 
+                  aggregation_column="ens_gene",
+                  gene_mode=T)
+```
+
+```{r}
+so <- sleuth_fit(so, ~culture*treatment, 'full')
+so <- sleuth_fit(so, ~1, 'reduced')
+```
+
+```{r}
+so <- sleuth_lrt(so, "reduced", "full")
+```
+
+```{r}
+results <- sleuth_results(so, "reduced:full", "lrt", show_all=F)
+```
+
+```{r}
+models <- extract_model(so, "full")
+models$std_error <- NULL
+models <- spread(models, term, estimate)
+
+results <- left_join(models, results, by="target_id")
+write.csv(results, file="~/Projects/20180430_rna_seq/spheroid_project/output/full_model_de_results.csv", row.names=F)
+```
+
+```{r}
+#Defining sig as q<0.05 and at least one of the model coefficients having a value of 1
+sig_genes <- filter(results, abs(cultureSpheroid)>=0.5 | 
+                      abs(cultureSpheroid:treatmentTGFB) >=0.5 | 
+                      abs(treatmentTGFB) >=0.5)
+sig_genes <- filter(sig_genes, qval <= 0.05)
+```
+
+```{r}
+genes <- unique(t2g[,2:3])
+dat <- so$obs_norm
+dat$scaled_reads_per_base <- NULL
+dat <- spread(dat, sample, tpm)
+#Isolate expression matrix
+exp <- dat
+rownames(exp) <- exp$target_id
+exp$target_id <- NULL
+exp <- as.matrix(exp)
+#Make csv with gene symbols for Lauren
+dat <- left_join(genes, dat, by=c("ens_gene"="target_id"))
+dat <- na.omit(dat)
+write.csv(dat, file="~/Projects/20180430_rna_seq/spheroid_project/output/spheroid_tpm_expression.csv", row.names=F)
+```
+
+```{r}
+exp_sig <- exp[sig_genes$target_id,]
+exp_sig <- log2(exp_sig+1)
+exp_sig <- t(scale(t(exp_sig), scale=T, center=T))
+exp_sig[exp_sig>2] <- 2
+exp_sig[exp_sig<(-2)] <- (-2)
+
+sig_heatmap <- pheatmap(exp_sig,
+                        color=magma(100),
+                        cluster_rows=T,
+                        cluster_cols=F,
+                        cutree_row=7,
+                        clustering_method="ward.D2",
+                        show_rownames=F,
+                        show_colnames=T,
+                        filename="~/Projects/20180430_rna_seq/spheroid_project/figs/heatmap_sig_genes.png",
+                        width=3.25, height=7)
+```
+
+```{r}
+clusters <- as.data.frame(cutree(sig_heatmap$tree_row, k=7))
+colnames(clusters) <- "Cluster"
+clusters$target_id <- rownames(clusters)
+table(clusters$Cluster)
+```
+
+```{r}
+unique(clusters$Cluster[sig_heatmap$tree_row$order])
+```
+
+So the order of the clusters along the heatmap (top to bottom) is 7, 1, 6, 5, 2, 3, 4
+
+```{r}
+clusters <- left_join(clusters, sig_genes, by="target_id")
+write.csv(clusters, file="~/Projects/20180430_rna_seq/spheroid_project/output/gene_clusters.csv", row.names=F)
+```
+
+# Enrichment of each cluster
+To make this a little easier, I'll just write a function that does this all
+```{r}
+library(gProfileR)
+get_go <- function(cluster){
+  cluster_genes <- filter(clusters, Cluster == cluster)$target_id
+  go_all <- gprofiler(query=cluster_genes, organism="mmusculus",
+                      significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="none")
+  write.csv(go_all, file=paste0("~/Projects/20180430_rna_seq/spheroid_project/output/cluster_",cluster,"_GO_allterms.csv"))
+  go_slim <- gprofiler(query=cluster_genes, organism="mmusculus",
+                       significant=T, src_filter=c("GO:BP", "KEGG"), hier_filtering="strong")
+  go_slim$gene_cluster <- cluster
+  return(go_slim)
+}
+cluster1_terms <- get_go(1)
+cluster2_terms <- get_go(2)
+cluster3_terms <- get_go(3)
+cluster4_terms <- get_go(4)
+cluster5_terms <- get_go(5)
+cluster6_terms <- get_go(6)
+cluster7_terms <- get_go(7)
+
+go_terms <- bind_rows(cluster1_terms, cluster2_terms, cluster3_terms, cluster4_terms,
+                      cluster5_terms, cluster6_terms, cluster7_terms)
+#List is pretty long to include both GO and KEGG. I'll filter to only be GO
+go_terms <- filter(go_terms, domain=="BP")
+#Could also make the p-value cutoff 0.01
+go_terms <- filter(go_terms, p.value <= 0.01)
+```
+
+```{r}
+#Capitalize terms
+go_terms$term.name <- Hmisc::capitalize(go_terms$term.name)
+#Re-order gene clusters
+go_terms$gene_cluster <- factor(go_terms$gene_cluster, levels=c(7, 1, 6, 5, 2, 3, 4))
+#log p-val
+go_terms$log.p.value <- -log10(go_terms$p.value)
+#Order data frame and make order column
+go_terms <- go_terms %>% 
+  arrange(gene_cluster, log.p.value) %>%
+  mutate(order=factor(row_number()))
+
+#Changing name of one long GO term
+go_terms$term.name[which(go_terms$term.name=="Antigen processing and presentation of peptide antigen via MHC class I")] <- "Antigen presentation via MHC class I"
+go_terms$term.name[which(go_terms$term.name=="Positive regulation of transcription by RNA polymerase II")] <- "Positive regulation of transcription"
+
+plot_breaks <- c(log10(2), log10(20))
+
+go_plot <- ggplot(go_terms, aes(x=log10(log.p.value), y=order)) +
+  geom_point(size=2, aes(color=log10(log.p.value))) +
+  geom_vline(xintercept=log10(-log10(0.01)), linetype=2) +
+  ylab("") + xlab("-log10(p value)") +
+  scale_color_viridis(begin=0.2) +
+  scale_y_discrete(position="left", breaks=go_terms$order, labels=go_terms$term.name) +
+  scale_x_continuous(limits=c(0, 1.76), breaks=plot_breaks, labels=c(2, 20)) +
+  facet_grid(gene_cluster ~ ., scale="free", space="free") +
+  #facet_wrap(~gene_cluster, scales="free", ncol=1, strip.position="right") +
+  theme_bw() +
+  theme(legend.position="none",
+        strip.text.y=element_blank())
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/spheroid_go_plot.png", width=3.8, height=5.75)
+ggsave(go_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/spheroid_go_plot.pdf", width=3.85, height=5.75,
+       useDingbats=F)
+```
+
+# Specific genes to plot
+Tgfbr2, Wnt5b
+
+Col1a1, Cdk1, Col5a2, Cdk4, Col4a4, Brca1, Cdk7, Cdk18, Cdk14
+
+Sox9, Zeb1, Esr1, Aldh1l1, Twist1, Pax8, Aldh1h1, Greb1, Aldh1a7, Zeb2
+
+Adamts16, Mmp2, Col5a1, Itgb5, Adamts10, Itgb1, Col6a1, Mmp17, Mmp9, Mmp24
+
+Tgfb1, Alcam, Snai1, Cd44, Ptgs2, Abcc5, Abca9, Krt19, Nlrc3, Cdca7l, Cdc25b, Abcc5
+
+Lmnb1, Crb2, Lats2, Tead1, Cdc123, Cdc7
+
+Abcb1a, Aldh3b1, Dusp5, Dhrs9
+
+Goal is to have a facet plot
+
+```{r}
+gene_list <- c("Tgfbr2", "Col1a1", "Cdk1", "Brca1", "Sox9", "Zeb1", "Esr1", "Twist1", "Pax8", 
+               "Greb1", "Aldh1a7", "Zeb2", "Tgfb1", "Mmp2", "Cd44", "Ptgs2", "Krt19", "Cdk4",
+               "Lats2", "Snai1")
+
+exp_dat <- filter(dat, ext_gene %in% gene_list)
+#Add cluster info
+cluster_anno <- data.frame(ext_gene=as.character(clusters$ext_gene),
+                           Cluster=factor(clusters$Cluster, levels=c(7, 1, 6, 5, 2, 3, 4)))
+exp_dat <- left_join(exp_dat, cluster_anno, by="ext_gene")
+#Order dataframe
+exp_dat <- exp_dat[order(exp_dat$Cluster),]
+exp_dat$ext_gene <- factor(exp_dat$ext_gene, levels=exp_dat$ext_gene)
+
+exp_tidy <- gather(exp_dat, "Sample", "Expression", -ens_gene, -ext_gene, -Cluster)
+exp_tidy <- separate(exp_tidy, Sample, into=c("Culture", "Treatment", "Replicate"))
+```
+
+```{r}
+set2 <- brewer.pal(8, "Set2")
+gene_plot <- ggplot(exp_tidy, aes(x=Culture, y=log2(Expression+1), group=Treatment)) +
+  geom_point(position=position_dodge(width=0.75), size=1, aes(color=Treatment)) +
+  stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean,
+                 geom='crossbar', width=0.75, position=position_dodge(width=0.75)) +
+  facet_wrap(~ ext_gene, scales="free_y") +
+  scale_x_discrete(labels=c("Monolayer", "Sphere")) +
+  #scale_color_manual(values=c(set2[8], set2[2]), labels=c("Control", "TGFB1")) +
+  xlab("") + ylab("log2(TPM + 1)") +
+  theme_bw() +
+  theme(strip.text=element_text(face="italic", size=10),
+        strip.background = element_rect(color="white", fill="white"),
+        axis.text.x=element_text(angle=45, hjust=1, size=10),
+        legend.text=element_text(size=10),
+        legend.title=element_text(size=10))
+ggsave(gene_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/sig_gene_expression.pdf", useDingbats=F,
+       width=8, height=8)
+ggsave(gene_plot, file="~/Projects/20180430_rna_seq/spheroid_project/figs/sig_gene_expression.png",
+       width=6, height=6)
+
+gene_plot
+```
+
+
+
+
+
